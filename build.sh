@@ -10,16 +10,18 @@ warnings="-Wall -Wextra -Wshadow -Wconversion -Wdouble-promotion -Wno-unused-fun
 common="-O0 -g -D NISK_DEBUG=1 -lm"
 
 # Source files to compile
-platform_src="$location/code/main.c"
+platform_src="$location/code/linux_platform.c"
+glad_src="$location/external/src/glad/glad.c"
+sources="$platform_src $glad_src"
 
 # External headers/libraries
 inc_dir="$location/external/include"
 lib_dir="$location/external/lib/linux"
 sdl_lib="$lib_dir/SDL2"
-sdl_flags="-I$inc_dir/SDL2 -D _REENTRANT -L$sdl_lib -lSDL2"
-external_flags="$sdl_flags -Wl,-rpath,$ORIGIN$sdl_lib"
+sdl_flags="-D _REENTRANT -lSDL2 -Wl,-rpath,$ORIGIN$sdl_lib"
+external_flags="-I$inc_dir $glad_flags $sdl_flags"
 
 mkdir -p build
 cd build
 
-gcc $platform_src -o game.out $common $warnings -lGL -ldl $external_flags
+gcc $sources -o card-game.out $common $warnings -lGL -ldl $external_flags 
