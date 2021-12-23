@@ -1,10 +1,19 @@
 // Platform independent
-#include "base.h"          // core functionality/helpers
-#include "game_platform.h" // platform-game communication
+#include "base.h"                // core functionality/helpers
+#include "game_platform.h"       // platform-game communication
 
 // External
-#include "SDL2/SDL.h"
-#include "glad/glad.h"
+#include "SDL2/SDL.h"            // window/context creation
+#include "glad/glad.h"           // GL loader
+
+// stb_image is giving us bad time...
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsign-conversion"
+#pragma GCC diagnostic ignored "-Wdouble-promotion"
+#pragma GCC diagnostic ignored "-Wconversion"
+#define STB_IMAGE_IMPLEMENTATION // required by stb_image
+#include "stb/stb_image.h"       // reading images
+#pragma GCC diagnostic pop
 
 // Platform specific/temporary
 #include <stdio.h>
@@ -217,27 +226,32 @@ int main(void)
     
     glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
     
-    
     char *vertex_shader_source = "#version 330 core\n"
         "layout (location = 0) in vec3 aPos;\n"
+        "layout (location = 1) in vec2 aTexCoord;\n"
+        "out vec2 TexCoord;\n"
         "void main()\n"
         "{\n"
-        "    gl_Position = vec4(aPos.x, aPos.y, aPos.z, 1.0);\n"
+        "    gl_Position = vec4(aPos, 1.0);\n"
+        "    TexCoord = aTexCoord;\n"
         "}\0";
     
     char *fragment_shader_source = "#version 330 core\n"
         "out vec4 FragColor;\n"
+        "in vec2 TexCoord;\n"
+        "uniform sampler2D texture0;\n"
         "void main()\n"
         "{\n"
-        "FragColor = vec4(1.0f, 0.5f, 0.2f, 1.0f);\n"
+        "FragColor = texture(texture0, TexCoord);\n"
         "}\0";
     
     unsigned int program = CreateProgram(vertex_shader_source, fragment_shader_source);
     
-    float vertices[] = {
-        -0.5f, -0.5f, 0.0f, // left  
-        0.5f, -0.5f, 0.0f, // right 
-        0.0f,  0.5f, 0.0f  // top   
+    float vertices[] =
+    {
+        -0.5f, -0.5f, 0.0f,   0.0f, 0.0f, // left  
+        0.5f, -0.5f, 0.0f,    1.0f, 0.0f,  // right 
+        0.0f,  0.5f, 0.0f,    0.5f, 1.0f,   // top   
     }; 
     
     unsigned int VBO, VAO;
@@ -249,9 +263,49 @@ int main(void)
     glBindBuffer(GL_ARRAY_BUFFER, VBO);
     glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
     
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+    // position
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5*sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
+    // texture coord
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 5*sizeof(float), (void*)(3*sizeof(float)));
+    glEnableVertexAttribArray(1);
     
+    // create and bind texture
+    unsigned int texture;
+    glGenTextures(1, &texture);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    // set parameters (sampling/border)
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    float texture_border_color[] = { 1.0f, 0.0f, 1.0f, 1.0f };
+    glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, texture_border_color);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    // load the texture data
+    int texture_w, texture_h, texture_ch;
+    stbi_set_flip_vertically_on_load(true);  
+    unsigned char *texture_data = stbi_load("../assets/trinity.png", &texture_w, &texture_h, &texture_ch, 0);
+    if(texture_data)
+    {
+        glTexImage2D(GL_TEXTURE_2D,
+                     0,                // mipmap level
+                     GL_RGB,           // texture store format
+                     texture_w,
+                     texture_h,
+                     0,
+                     GL_RGB,           // texture read format
+                     GL_UNSIGNED_BYTE,
+                     texture_data);
+        // glGenerateMipmap(GL_TEXTURE_2D);
+    }
+    else
+    {
+        fprintf(stderr, "Failed to load texture.\n");
+    }
+    stbi_image_free(texture_data);
+    
+    UseProgram(program);
+    SetIntUniform(program, "texture0", 0);
     
     // Input *input = &global_app.input;
     
