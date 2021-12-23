@@ -1,10 +1,12 @@
-#include "base.h"
+// Platform independent
+#include "base.h"          // core functionality/helpers
+#include "game_platform.h" // platform-game communication
 
-#include "game_platform.h"
-
+// External
 #include "SDL2/SDL.h"
 #include "glad/glad.h"
 
+// Platform specific/temporary
 #include <stdio.h>
 
 typedef struct App
@@ -19,15 +21,15 @@ typedef struct App
     Input input;
 } App;
 
-App global_app = {0};
+App global_app;
 
-internal void SDLError(char *message)
+internal void DieSDL(char *message)
 {
     fprintf(stderr, "%s: %s\n", message, SDL_GetError());
     exit(2);
 }
 
-internal void SDLHandleEvent(SDL_Event *event)
+internal void HandleSDLEvent(SDL_Event *event)
 {
     switch(event->type)
     {
@@ -102,18 +104,88 @@ case keycode: { global_app.input.keys_down[(input_key)] = is_down; } break
     }
 }
 
+unsigned int CreateProgram(char *vertex_shader_source,
+                           char *fragment_shader_source)
+{
+    int success;
+    char info_log[512];
+    unsigned int vertex_shader, fragment_shader;
+    
+    vertex_shader = glCreateShader(GL_VERTEX_SHADER);
+    glShaderSource(vertex_shader, 1, (const GLchar **)&vertex_shader_source, 0);
+    glCompileShader(vertex_shader);
+    glGetShaderiv(vertex_shader, GL_COMPILE_STATUS, &success);
+    if(!success)
+    {
+        glGetShaderInfoLog(vertex_shader, 512, 0, info_log);
+        fprintf(stderr, "glCompileShader(vertex): %s\n", info_log);
+        INVALID_CODE_PATH;
+    }
+    
+    fragment_shader = glCreateShader(GL_FRAGMENT_SHADER);
+    glShaderSource(fragment_shader, 1,(const GLchar **) &fragment_shader_source, 0);
+    glCompileShader(fragment_shader);
+    glGetShaderiv(fragment_shader, GL_COMPILE_STATUS, &success);
+    if(!success)
+    {
+        glGetShaderInfoLog(vertex_shader, 512, 0, info_log);
+        fprintf(stderr, "glCompileShader(fragment): %s\n", info_log);
+        INVALID_CODE_PATH;
+    }
+    
+    unsigned int shader_program;
+    shader_program = glCreateProgram();
+    glAttachShader(shader_program, vertex_shader);
+    glAttachShader(shader_program, fragment_shader);
+    glLinkProgram(shader_program);
+    glGetProgramiv(shader_program, GL_LINK_STATUS, &success);
+    if(!success)
+    {
+        glGetShaderInfoLog(shader_program, 512, 0, info_log);
+        fprintf(stderr, "glLinkProgram(): %s\n", info_log);
+        INVALID_CODE_PATH;
+    }
+    
+    glDeleteShader(vertex_shader);
+    glDeleteShader(fragment_shader);
+    
+    return shader_program;
+}
+
+void UseProgram(unsigned int program)
+{
+    glUseProgram(program);
+}
+
+void SetBoolUniform(unsigned int program, char *name, bool value)
+{
+    GLint uniform_location = glGetUniformLocation(program, name);
+    glUniform1i(uniform_location, (int)value);
+}
+
+void SetIntUniform(unsigned int program, char *name, int value)
+{
+    GLint uniform_location = glGetUniformLocation(program, name);
+    glUniform1i(uniform_location, value);
+}
+
+void SetFloatUniform(unsigned int program, char *name, float value)
+{
+    GLint uniform_location = glGetUniformLocation(program, name);
+    glUniform1f(uniform_location, value);
+}
+
 int main(void)
 {
     if(SDL_Init(SDL_INIT_VIDEO) != 0)
-        SDLError("Couldn't initialize SDL");
+        DieSDL("Couldn't initialize SDL");
     
-    // Request an OpenGL 4.2 context (should be core)
     SDL_GL_SetAttribute(SDL_GL_ACCELERATED_VISUAL, 1);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 2);
-    // Also request a depth buffer
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 0);
+    // SDL_GL_SetSwapInterval(1);
     
     global_app.screen_w = 960;
     global_app.screen_h = 540;
@@ -127,92 +199,40 @@ int main(void)
                                           window_flags);
     
     if(window == 0)
-        SDLError("Couldn't create a window");
+        DieSDL("Couldn't create a window");
     global_app.window = window;
     
     SDL_GLContext gl_context = SDL_GL_CreateContext(window);
     if(gl_context == 0)
-        SDLError("Failed to create OpenGL context");
+        DieSDL("Failed to create OpenGL context");
+    SDL_GL_MakeCurrent(window, gl_context);
     
-    // Check OpenGL properties
     gladLoadGLLoader(SDL_GL_GetProcAddress);
     // printf("Vendor:   %s\n", glGetString(GL_VENDOR));
     // printf("Renderer: %s\n", glGetString(GL_RENDERER));
     // printf("Version:  %s\n", glGetString(GL_VERSION));
     
-    // Use v-sync
-    SDL_GL_SetSwapInterval(1);
-    
-    // Disable depth test and face culling.
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
     
-    global_app.is_running = true;
-    
-    SDL_GL_MakeCurrent(window, gl_context);
-    SDL_GL_SetSwapInterval(1); // enable vsync
-    
     glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
     
-    // Input *input = &global_app.input;
     
-    const GLchar *vertex_shader_source = "#version 330 core\n"
+    char *vertex_shader_source = "#version 330 core\n"
         "layout (location = 0) in vec3 aPos;\n"
         "void main()\n"
         "{\n"
         "    gl_Position = vec4(aPos.x, aPos.y, aPos.z, 1.0);\n"
         "}\0";
     
-    int success;
-    char info_log[512];
-    
-    unsigned int vertex_shader;
-    vertex_shader = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vertex_shader, 1, &vertex_shader_source, 0);
-    glCompileShader(vertex_shader);
-    
-    glGetShaderiv(vertex_shader, GL_COMPILE_STATUS, &success);
-    
-    if(!success)
-    {
-        glGetShaderInfoLog(vertex_shader, 512, 0, info_log);
-        fprintf(stderr, "glCompileShader(vertex): %s\n", info_log);
-    }
-    
-    const GLchar *fragment_shader_source = "#version 330 core\n"
+    char *fragment_shader_source = "#version 330 core\n"
         "out vec4 FragColor;\n"
         "void main()\n"
         "{\n"
         "FragColor = vec4(1.0f, 0.5f, 0.2f, 1.0f);\n"
         "}\0";
     
-    unsigned int fragment_shader;
-    fragment_shader = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(fragment_shader, 1, &fragment_shader_source, 0);
-    glCompileShader(fragment_shader);
-    
-    glGetShaderiv(fragment_shader, GL_COMPILE_STATUS, &success);
-    if(!success)
-    {
-        glGetShaderInfoLog(vertex_shader, 512, 0, info_log);
-        fprintf(stderr, "glCompileShader(fragment): %s\n", info_log);
-    }
-    
-    unsigned int shader_program;
-    shader_program = glCreateProgram();
-    glAttachShader(shader_program, vertex_shader);
-    glAttachShader(shader_program, fragment_shader);
-    glLinkProgram(shader_program);
-    
-    glGetProgramiv(shader_program, GL_LINK_STATUS, &success);
-    if(!success)
-    {
-        glGetShaderInfoLog(shader_program, 512, 0, info_log);
-        fprintf(stderr, "glLinkProgram(): %s\n", info_log);
-    }
-    
-    glDeleteShader(vertex_shader);
-    glDeleteShader(fragment_shader);
+    unsigned int program = CreateProgram(vertex_shader_source, fragment_shader_source);
     
     float vertices[] = {
         -0.5f, -0.5f, 0.0f, // left  
@@ -223,7 +243,7 @@ int main(void)
     unsigned int VBO, VAO;
     glGenVertexArrays(1, &VAO);
     glGenBuffers(1, &VBO);
-    // bind the Vertex Array Object first, then bind and set vertex buffer(s), and then configure vertex attributes(s).
+    
     glBindVertexArray(VAO);
     
     glBindBuffer(GL_ARRAY_BUFFER, VBO);
@@ -232,23 +252,20 @@ int main(void)
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
     
-    // note that this is allowed, the call to glVertexAttribPointer registered VBO as the vertex attribute's bound vertex buffer object so afterwards we can safely unbind
-    glBindBuffer(GL_ARRAY_BUFFER, 0); 
     
-    // You can unbind the VAO afterwards so other VAO calls won't accidentally modify this VAO, but this rarely happens. Modifying other
-    // VAOs requires a call to glBindVertexArray anyways so we generally don't unbind VAOs (nor VBOs) when it's not directly necessary.
-    glBindVertexArray(0); 
+    // Input *input = &global_app.input;
     
+    global_app.is_running = true;
     while(global_app.is_running)
     {
         SDL_Event event;
         while(SDL_PollEvent(&event))
         {
-            SDLHandleEvent(&event);
+            HandleSDLEvent(&event);
         }
         
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        glUseProgram(shader_program);
+        UseProgram(program);
         glBindVertexArray(VAO);
         glDrawArrays(GL_TRIANGLES, 0, 3);
         
