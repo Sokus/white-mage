@@ -1,6 +1,7 @@
 // Platform independent
 #include "base.h"                // core functionality/helpers
 #include "game_platform.h"       // platform-game communication
+#include "my_math.h"
 
 // External
 #include "SDL2/SDL.h"            // window/context creation
@@ -245,30 +246,6 @@ int main(void)
         "FragColor = texture(texture0, TexCoord);\n"
         "}\0";
     
-    unsigned int program = CreateProgram(vertex_shader_source, fragment_shader_source);
-    
-    float vertices[] =
-    {
-        -0.5f, -0.5f, 0.0f,   0.0f, 0.0f, // left  
-        0.5f, -0.5f, 0.0f,    1.0f, 0.0f,  // right 
-        0.0f,  0.5f, 0.0f,    0.5f, 1.0f,   // top   
-    }; 
-    
-    unsigned int VBO, VAO;
-    glGenVertexArrays(1, &VAO);
-    glGenBuffers(1, &VBO);
-    
-    glBindVertexArray(VAO);
-    
-    glBindBuffer(GL_ARRAY_BUFFER, VBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-    
-    // position
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5*sizeof(float), (void*)0);
-    glEnableVertexAttribArray(0);
-    // texture coord
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 5*sizeof(float), (void*)(3*sizeof(float)));
-    glEnableVertexAttribArray(1);
     
     // create and bind texture
     unsigned int texture;
@@ -304,6 +281,56 @@ int main(void)
     }
     stbi_image_free(texture_data);
     
+    
+    
+    unsigned int program = CreateProgram(vertex_shader_source, fragment_shader_source);
+    
+    int pixels_per_tile = 8;
+    float tile_pct_w = (float)pixels_per_tile / (float)texture_w;
+    float tile_pct_h = (float)pixels_per_tile / (float)texture_h;
+    
+    vec4 p0 = Vec4(-0.5f, -0.5f, 0.0f, 0.0f);
+    vec4 p1 = Vec4( 0.5f,  0.5f, 0.0f, 0.0f);
+    
+    mat4 m_ortho = Orthographic(0.0f, (float)global_app.screen_w,
+                                0.0f, (float)global_app.screen_h, 
+                                0.0f, 1.0f);
+    float scale = 64.0f;
+    mat4 m_scale = Scale(Vec3(scale, scale, 0));
+    
+    mat4 projection = MultiplyMat4(m_ortho, m_scale);
+    
+    vec4 p0p = MultiplyMat4ByVec4(projection, p0);
+    vec4 p1p = MultiplyMat4ByVec4(projection, p1);
+    
+    float vertices [] =
+    {
+        p0p.x, p0p.y, 0.0f,    0.0f,       1.0f-tile_pct_h,
+        p1p.x, p0p.y, 0.0f,    tile_pct_w, 1.0f-tile_pct_h,
+        p1p.x, p1p.y, 0.0f,    tile_pct_w, 1.0f,
+        
+        p0p.x, p0p.y, 0.0f,    0.0f,       1.0f-tile_pct_h,
+        p1p.x, p1p.y, 0.0f,    tile_pct_w, 1.0f,
+        p0p.x, p1p.y, 0.0f,    0.0f,       1.0f
+    };
+    
+    
+    unsigned int VBO, VAO;
+    glGenVertexArrays(1, &VAO);
+    glGenBuffers(1, &VBO);
+    
+    glBindVertexArray(VAO);
+    
+    glBindBuffer(GL_ARRAY_BUFFER, VBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+    
+    // position
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5*sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+    // texture coord
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 5*sizeof(float), (void*)(3*sizeof(float)));
+    glEnableVertexAttribArray(1);
+    
     UseProgram(program);
     SetIntUniform(program, "texture0", 0);
     
@@ -321,7 +348,7 @@ int main(void)
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         UseProgram(program);
         glBindVertexArray(VAO);
-        glDrawArrays(GL_TRIANGLES, 0, 3);
+        glDrawArrays(GL_TRIANGLES, 0, 6);
         
         SDL_GL_SwapWindow(window);
     }
