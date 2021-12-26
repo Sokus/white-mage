@@ -197,8 +197,8 @@ int main(void)
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 0);
     // SDL_GL_SetSwapInterval(1);
     
-    global_app.screen_w = 960;
-    global_app.screen_h = 540;
+    global_app.screen_w = 129;
+    global_app.screen_h = 129;
     
     SDL_WindowFlags window_flags = (SDL_WindowFlags)(SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
     SDL_Window *window = SDL_CreateWindow("Card Game",
@@ -225,7 +225,15 @@ int main(void)
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
     
-    glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+    //glEnable(GL_BLEND);
+    //glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    //glEnable( GL_LINE_SMOOTH );
+    //glEnable( GL_POLYGON_SMOOTH );
+    //glHint( GL_LINE_SMOOTH_HINT, GL_NICEST );
+    //glHint( GL_POLYGON_SMOOTH_HINT, GL_NICEST );
+    
+    glClearColor(0, 1, 0, 1);
+    // glClearColor(46.0f/256.0f, 34.0f/256.0f, 47.0f/256.0f, 1.0f);
     
     char *vertex_shader_source = "#version 330 core\n"
         "layout (location = 0) in vec3 aPos;\n"
@@ -244,6 +252,7 @@ int main(void)
         "void main()\n"
         "{\n"
         "FragColor = texture(texture0, TexCoord);\n"
+        "//FragColor = vec4(1, 1, 1, 1);\n"
         "}\0";
     
     
@@ -256,8 +265,9 @@ int main(void)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
     float texture_border_color[] = { 1.0f, 0.0f, 1.0f, 1.0f };
     glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, texture_border_color);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    GLint filtering = 1 ? GL_NEAREST : GL_LINEAR;
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filtering);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filtering);
     // load the texture data
     int texture_w, texture_h, texture_ch;
     stbi_set_flip_vertically_on_load(true);  
@@ -281,37 +291,52 @@ int main(void)
     }
     stbi_image_free(texture_data);
     
-    
-    
     unsigned int program = CreateProgram(vertex_shader_source, fragment_shader_source);
     
-    int pixels_per_tile = 8;
-    float tile_pct_w = (float)pixels_per_tile / (float)texture_w;
-    float tile_pct_h = (float)pixels_per_tile / (float)texture_h;
+    float pos_x = 0.0f;
+    float pos_y = 0.0f;
+    float width = 64.0f;
+    float height = 64.0f;
     
-    vec4 p0 = Vec4(-0.5f, -0.5f, 0.0f, 0.0f);
-    vec4 p1 = Vec4( 0.5f,  0.5f, 0.0f, 0.0f);
+    vec4 p0 = Vec4(pos_x,             pos_y,             0.0f, 0.0f);
+    vec4 p1 = Vec4(pos_x+width,  pos_y,             0.0f, 0.0f);
+    vec4 p2 = Vec4(pos_x+width,  pos_y+height, 0.0f, 0.0f);
+    vec4 p3 = Vec4(pos_x,             pos_y+height, 0.0f, 0.0f);
     
-    mat4 m_ortho = Orthographic(0.0f, (float)global_app.screen_w,
-                                0.0f, (float)global_app.screen_h, 
-                                0.0f, 1.0f);
-    float scale = 64.0f;
-    mat4 m_scale = Scale(Vec3(scale, scale, 0));
+    float screen_w = (float)global_app.screen_w;
+    float screen_h = (float)global_app.screen_h;
     
-    mat4 projection = MultiplyMat4(m_ortho, m_scale);
+    mat4 pixel_align = Translate(Vec3(0.0f, 0.0f, 0.0f));
+    mat4 orthographic = Orthographic(0, screen_w, 0, screen_h, 0.0f, 100.0f);
     
-    vec4 p0p = MultiplyMat4ByVec4(projection, p0);
-    vec4 p1p = MultiplyMat4ByVec4(projection, p1);
+    mat4 matrix = MultiplyMat4(orthographic, pixel_align);
+    
+    vec4 p0p = MultiplyMat4ByVec4(matrix, Vec4v(p0.xyz, 1.0f));
+    vec4 p1p = MultiplyMat4ByVec4(matrix, Vec4v(p1.xyz, 1.0f));
+    vec4 p2p = MultiplyMat4ByVec4(matrix, Vec4v(p2.xyz, 1.0f));
+    vec4 p3p = MultiplyMat4ByVec4(matrix, Vec4v(p3.xyz, 1.0f));
+    
+    float tile_size = 8.0f;
+    float texel_w = 1.0f/(float)texture_w;
+    float texel_h = 1.0f/(float)texture_h;
+    float tile_x = 0; // 10
+    float tile_y = 8; // 8
+    
+    float offset_x = -0.0f * texel_w;
+    float offset_y = 0.0f * texel_h;
+    
+    vec2 t0 = Vec2(tile_x * tile_size * texel_w + offset_x,     tile_y * tile_size * texel_h + offset_y);
+    vec2 t1 = Vec2((tile_x+1) * tile_size * texel_w + offset_x, (tile_y+1) * tile_size * texel_h + offset_y);
     
     float vertices [] =
     {
-        p0p.x, p0p.y, 0.0f,    0.0f,       1.0f-tile_pct_h,
-        p1p.x, p0p.y, 0.0f,    tile_pct_w, 1.0f-tile_pct_h,
-        p1p.x, p1p.y, 0.0f,    tile_pct_w, 1.0f,
+        p0p.x, p0p.y, 0.0f,    t0.x, t0.y,
+        p1p.x, p1p.y, 0.0f,    t1.x, t0.y,
+        p2p.x, p2p.y, 0.0f,    t1.x, t1.y,
         
-        p0p.x, p0p.y, 0.0f,    0.0f,       1.0f-tile_pct_h,
-        p1p.x, p1p.y, 0.0f,    tile_pct_w, 1.0f,
-        p0p.x, p1p.y, 0.0f,    0.0f,       1.0f
+        p0p.x, p0p.y, 0.0f,    t0.x, t0.y,
+        p2p.x, p2p.y, 0.0f,    t1.x, t1.y,
+        p3p.x, p3p.y, 0.0f,    t0.x, t1.y
     };
     
     
@@ -348,6 +373,7 @@ int main(void)
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         UseProgram(program);
         glBindVertexArray(VAO);
+        //glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
         glDrawArrays(GL_TRIANGLES, 0, 6);
         
         SDL_GL_SwapWindow(window);

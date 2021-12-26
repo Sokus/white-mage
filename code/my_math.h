@@ -66,22 +66,26 @@
 // types
 typedef union vec2
 {
-    struct { float x, y; };
-    struct { float width, height; };
     float elements[2];
+    struct { float x, y; };
+    struct { float u, v; };
+    struct { float width, height; };
 } vec2;
 
 typedef union vec3
 {
+    float elements[3];
     struct { float x, y, z; };
+    struct { float u, v, w; };
     struct { float r, g, b; };
     struct { vec2 xy; float ignored0; };
     struct { float ingored1; vec2 yz; };
-    float elements[3];
 } vec3;
 
 typedef union vec4
 {
+    float elements[4];
+    
     struct
     {
         union
@@ -101,8 +105,6 @@ typedef union vec4
         };
         float a;
     };
-    
-    float elements[4];
 } vec4;
 
 typedef union mat4
