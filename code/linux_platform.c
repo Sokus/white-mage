@@ -241,6 +241,62 @@ typedef enum SpriteID
     SpriteID_Grave        = 13*16 + 4*3 + 2
 } SpriteID;
 
+void InitializeInput(Input *input)
+{
+    MEMORY_SET(&input->keys_down_duration, -1.0f, sizeof(input->keys_down_duration));
+}
+
+void UpdateInput(Input *input, float delta_time)
+{
+    MEMORY_COPY(input->keys_down_duration_previous,
+                input->keys_down_duration,
+                sizeof(input->keys_down_duration));
+    
+    for(int key_idx = 0; key_idx < InputKey_Count; ++key_idx)
+    {
+        float old_duration = input->keys_down_duration_previous[key_idx];
+        bool is_down = input->keys_down[key_idx];
+        bool was_down = old_duration >= 0.0f;
+        float new_duration = -1.0f;
+        if(is_down)
+        {
+            if(was_down)
+                new_duration = old_duration + delta_time;
+            else
+                new_duration = 0.0f;
+        }
+        input->keys_down_duration[key_idx] = new_duration;
+    }
+}
+
+bool IsDown(Input *input, int key_index)
+{
+    ASSERT(key_index >= 0 && key_index < InputKey_Count);
+    bool result = input->keys_down[key_index];
+    return result;
+}
+
+bool WasDown(Input *input, int key_index)
+{
+    ASSERT(key_index >= 0 && key_index < InputKey_Count);
+    bool result = input->keys_down_duration_previous[key_index] >= 0.0f;
+    return result;
+}
+
+bool Pressed(Input *input, int key_index)
+{
+    ASSERT(key_index >= 0 && key_index < InputKey_Count);
+    bool result = IsDown(input, key_index) && !WasDown(input, key_index);
+    return result;
+}
+
+float SDLGetSecondsElapsed(unsigned long int start_counter, unsigned long int end_counter)
+{
+    unsigned long int counter_elapsed = end_counter - start_counter;
+    float result = (float)counter_elapsed / (float)SDL_GetPerformanceFrequency();
+    return result;
+}
+
 int main(void)
 {
     if(SDL_Init(SDL_INIT_VIDEO) != 0)
@@ -281,8 +337,8 @@ int main(void)
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
     
-    glClearColor(0, 0, 0, 0);
-    // glClearColor(46.0f/256.0f, 34.0f/256.0f, 47.0f/256.0f, 1.0f);
+    // glClearColor(0, 0, 0, 0);
+    glClearColor(46.0f/256.0f, 34.0f/256.0f, 47.0f/256.0f, 1.0f);
     
     char *vertex_shader_source = "#version 420 core\n"
         "layout (location = 0) in vec3 a_pos;\n"
@@ -301,10 +357,14 @@ int main(void)
         "out vec4 frag_color;\n"
         "in vec2 uv;\n"
         "uniform sampler2DArray u_textures;\n"
-        "uniform int u_layer;"
+        "uniform int u_layer;\n"
+        "uniform bool u_flip;\n"
         "void main()\n"
         "{\n"
-        "    frag_color = texture(u_textures, vec3(uv, u_layer));\n"
+        "    vec2 uv_p = uv;"
+        "    if(u_flip)\n"
+        "        uv_p.x = uv.x * -1.0f + 1.0f;\n"
+        "    frag_color = texture(u_textures, vec3(uv_p, u_layer));\n"
         "}\0";
     
     
@@ -409,8 +469,19 @@ int main(void)
     UseProgram(program);
     SetIntUniform(program, "u_textures", 0);
     
-    // Input *input = &global_app.input;
+    float game_update_hz = 60.0f;
+    float target_seconds_per_frame = 1.0f / game_update_hz;
+    float dt = target_seconds_per_frame;
     
+    Input *input = &global_app.input;
+    InitializeInput(input);
+    
+    vec2 player_p = Vec2(0.5f, 0.5f);
+    float player_move_timer = 0.0f;
+    float player_move_time = 0.35f;
+    int player_direction = 1.0f;
+    
+    unsigned long int last_counter = SDL_GetPerformanceCounter();
     global_app.is_running = true;
     while(global_app.is_running)
     {
@@ -420,10 +491,38 @@ int main(void)
             HandleSDLEvent(&event);
         }
         
+        UpdateInput(input, dt);
+        
+        player_move_timer -= dt;
+        int move_x = 0;
+        int move_y = 0;
+        if(IsDown(input, InputKey_MoveUp))
+            move_y += 1;
+        if(IsDown(input, InputKey_MoveLeft))
+            move_x -= 1;
+        if(IsDown(input, InputKey_MoveDown))
+            move_y -= 1;
+        if(IsDown(input, InputKey_MoveRight))
+            move_x += 1;
+        
+        // only allow movement in one direction
+        if((move_x != 0 && move_y == 0) || (move_x == 0 && move_y != 0))
+        {
+            if(player_move_timer <= 0.0f)
+            {
+                if(move_x != 0)
+                    player_direction = move_x;
+                
+                player_p.x += (float)move_x;
+                player_p.y += (float)move_y;
+                player_move_timer = player_move_time;
+            }
+        }
+        
+        
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         
         UseProgram(program);
-        
         
         float model_size_in_pixels = 8.0f;
         float model_scale = 4.0f;
@@ -432,8 +531,8 @@ int main(void)
                                    1.0f);
         mat4 model = Scale(scaling_vector);
         
-        vec3 player_p = Vec3(0.5f, 0.5f, 0.0f);
-        mat4 view = Translate(MultiplyVec3(player_p, scaling_vector));
+        vec3 player_p_vec3 = Vec3(player_p.x, player_p.y, 0.0f);
+        mat4 view = Translate(MultiplyVec3(player_p_vec3, scaling_vector));
         
         mat4 projection = Orthographic(0, (float)global_app.screen_w,
                                        0, (float)global_app.screen_h,
@@ -443,13 +542,25 @@ int main(void)
         SetMat4Uniform(program, "u_view", &view);
         SetMat4Uniform(program, "u_projection", &projection);
         
-        SetIntUniform(program, "u_layer", SpriteID_Skeleton_1);
+        SetIntUniform(program, "u_layer", SpriteID_PlayerBlue);
+        SetBoolUniform(program, "u_flip", player_direction < 0);
         
         glBindVertexArray(VAO);
-        //glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
         glDrawArrays(GL_TRIANGLES, 0, 6);
         
         SDL_GL_SwapWindow(window);
+        
+        unsigned long int work_counter = SDL_GetPerformanceCounter();
+        float work_in_seconds = SDLGetSecondsElapsed(last_counter, work_counter);
+        
+        if(work_in_seconds < target_seconds_per_frame)
+        {
+            float sec_to_sleep = target_seconds_per_frame - work_in_seconds;
+            unsigned int ms_to_sleep = (unsigned int)(sec_to_sleep * 1000.0f) + 1;
+            SDL_Delay(ms_to_sleep);
+        }
+        
+        last_counter = SDL_GetPerformanceCounter();
     }
     
     SDL_GL_DeleteContext(gl_context);

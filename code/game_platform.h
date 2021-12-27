@@ -40,6 +40,8 @@ char *InputKeyName(InputKey input_key)
 typedef struct Input
 {
     bool keys_down[InputKey_Count];
+    float keys_down_duration[InputKey_Count];
+    float keys_down_duration_previous[InputKey_Count];
 } Input;
 
 #endif //GAME_PLATFORM_H
