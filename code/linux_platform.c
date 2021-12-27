@@ -138,7 +138,7 @@ unsigned int CreateProgram(char *vertex_shader_source,
     glGetShaderiv(fragment_shader, GL_COMPILE_STATUS, &success);
     if(!success)
     {
-        glGetShaderInfoLog(vertex_shader, 512, 0, info_log);
+        glGetShaderInfoLog(fragment_shader, 512, 0, info_log);
         fprintf(stderr, "glCompileShader(fragment): %s\n", info_log);
         INVALID_CODE_PATH;
     }
@@ -185,6 +185,26 @@ void SetFloatUniform(unsigned int program, char *name, float value)
     glUniform1f(uniform_location, value);
 }
 
+void SetMat4Uniform(unsigned int program, char *name, mat4 *matrix)
+{
+    GLint uniform_location = glGetUniformLocation(program, name);
+    glUniformMatrix4fv(uniform_location, 1, GL_FALSE, &matrix->elements[0][0]);
+}
+
+mat4 Mat4TileUV(int tile_x, int tile_y,
+                int texture_width, int texture_height,
+                int pixels_per_tile)
+{
+    float tile_pct_w = (float)pixels_per_tile / (float)texture_width;
+    float tile_pct_h = (float)pixels_per_tile / (float)texture_height;
+    
+    mat4 translate = Translate(Vec3((float)tile_x, (float)tile_y, 0.0f));
+    mat4 scale = Scale(Vec3(tile_pct_w, tile_pct_h, 1.0f));
+    
+    mat4 result = MultiplyMat4(scale, translate);
+    return result;
+}
+
 int main(void)
 {
     if(SDL_Init(SDL_INIT_VIDEO) != 0)
@@ -197,8 +217,8 @@ int main(void)
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 0);
     // SDL_GL_SetSwapInterval(1);
     
-    global_app.screen_w = 129;
-    global_app.screen_h = 129;
+    global_app.screen_w = 960;
+    global_app.screen_h = 540;
     
     SDL_WindowFlags window_flags = (SDL_WindowFlags)(SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
     SDL_Window *window = SDL_CreateWindow("Card Game",
@@ -225,34 +245,31 @@ int main(void)
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
     
-    //glEnable(GL_BLEND);
-    //glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    //glEnable( GL_LINE_SMOOTH );
-    //glEnable( GL_POLYGON_SMOOTH );
-    //glHint( GL_LINE_SMOOTH_HINT, GL_NICEST );
-    //glHint( GL_POLYGON_SMOOTH_HINT, GL_NICEST );
-    
-    glClearColor(0, 1, 0, 1);
+    glClearColor(0, 0, 0, 0);
     // glClearColor(46.0f/256.0f, 34.0f/256.0f, 47.0f/256.0f, 1.0f);
     
-    char *vertex_shader_source = "#version 330 core\n"
-        "layout (location = 0) in vec3 aPos;\n"
-        "layout (location = 1) in vec2 aTexCoord;\n"
-        "out vec2 TexCoord;\n"
+    char *vertex_shader_source = "#version 420 core\n"
+        "layout (location = 0) in vec3 a_pos;\n"
+        "layout (location = 1) in vec2 a_tex_coord;\n"
+        "out vec2 tex_coord;\n"
+        "uniform mat4 u_model;\n"
+        "uniform mat4 u_view;\n"
+        "uniform mat4 u_projection;\n"
         "void main()\n"
         "{\n"
-        "    gl_Position = vec4(aPos, 1.0);\n"
-        "    TexCoord = aTexCoord;\n"
+        "    gl_Position = u_projection * u_view * u_model * vec4(a_pos, 1.0f);\n"
+        "    tex_coord = a_tex_coord;\n"
         "}\0";
     
-    char *fragment_shader_source = "#version 330 core\n"
-        "out vec4 FragColor;\n"
-        "in vec2 TexCoord;\n"
-        "uniform sampler2D texture0;\n"
+    char *fragment_shader_source = "#version 420 core\n"
+        "out vec4 frag_color;\n"
+        "in vec2 tex_coord;\n"
+        "uniform sampler2D u_texture;\n"
+        "uniform mat4 u_uv_projection;\n"
         "void main()\n"
         "{\n"
-        "FragColor = texture(texture0, TexCoord);\n"
-        "//FragColor = vec4(1, 1, 1, 1);\n"
+        "vec4 tex_coord_p = u_uv_projection * vec4(tex_coord, 0.0f, 1.0f);\n"
+        "frag_color = texture(u_texture, tex_coord_p.xy);\n"
         "}\0";
     
     
@@ -293,52 +310,16 @@ int main(void)
     
     unsigned int program = CreateProgram(vertex_shader_source, fragment_shader_source);
     
-    float pos_x = 0.0f;
-    float pos_y = 0.0f;
-    float width = 64.0f;
-    float height = 64.0f;
-    
-    vec4 p0 = Vec4(pos_x,             pos_y,             0.0f, 0.0f);
-    vec4 p1 = Vec4(pos_x+width,  pos_y,             0.0f, 0.0f);
-    vec4 p2 = Vec4(pos_x+width,  pos_y+height, 0.0f, 0.0f);
-    vec4 p3 = Vec4(pos_x,             pos_y+height, 0.0f, 0.0f);
-    
-    float screen_w = (float)global_app.screen_w;
-    float screen_h = (float)global_app.screen_h;
-    
-    mat4 pixel_align = Translate(Vec3(0.0f, 0.0f, 0.0f));
-    mat4 orthographic = Orthographic(0, screen_w, 0, screen_h, 0.0f, 100.0f);
-    
-    mat4 matrix = MultiplyMat4(orthographic, pixel_align);
-    
-    vec4 p0p = MultiplyMat4ByVec4(matrix, Vec4v(p0.xyz, 1.0f));
-    vec4 p1p = MultiplyMat4ByVec4(matrix, Vec4v(p1.xyz, 1.0f));
-    vec4 p2p = MultiplyMat4ByVec4(matrix, Vec4v(p2.xyz, 1.0f));
-    vec4 p3p = MultiplyMat4ByVec4(matrix, Vec4v(p3.xyz, 1.0f));
-    
-    float tile_size = 8.0f;
-    float texel_w = 1.0f/(float)texture_w;
-    float texel_h = 1.0f/(float)texture_h;
-    float tile_x = 0; // 10
-    float tile_y = 8; // 8
-    
-    float offset_x = -0.0f * texel_w;
-    float offset_y = 0.0f * texel_h;
-    
-    vec2 t0 = Vec2(tile_x * tile_size * texel_w + offset_x,     tile_y * tile_size * texel_h + offset_y);
-    vec2 t1 = Vec2((tile_x+1) * tile_size * texel_w + offset_x, (tile_y+1) * tile_size * texel_h + offset_y);
-    
-    float vertices [] =
+    float vertices[] =
     {
-        p0p.x, p0p.y, 0.0f,    t0.x, t0.y,
-        p1p.x, p1p.y, 0.0f,    t1.x, t0.y,
-        p2p.x, p2p.y, 0.0f,    t1.x, t1.y,
+        -0.5f, -0.5f, 0.0f,    0.0f, 0.0f,
+        0.5f, -0.5f, 0.0f,    1.0f, 0.0f,
+        0.5f, 0.5f, 0.0f,    1.0f, 1.0f,
         
-        p0p.x, p0p.y, 0.0f,    t0.x, t0.y,
-        p2p.x, p2p.y, 0.0f,    t1.x, t1.y,
-        p3p.x, p3p.y, 0.0f,    t0.x, t1.y
+        -0.5f, -0.5f, 0.0f,    0.0f, 0.0f,
+        0.5f, 0.5f, 0.0f,    1.0f, 1.0f,
+        -0.5f, 0.5f, 0.0f,    0.0f, 1.0f
     };
-    
     
     unsigned int VBO, VAO;
     glGenVertexArrays(1, &VAO);
@@ -357,7 +338,7 @@ int main(void)
     glEnableVertexAttribArray(1);
     
     UseProgram(program);
-    SetIntUniform(program, "texture0", 0);
+    SetIntUniform(program, "u_texture", 0);
     
     // Input *input = &global_app.input;
     
@@ -371,7 +352,32 @@ int main(void)
         }
         
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        
         UseProgram(program);
+        
+        
+        float model_size_in_pixels = 8.0f;
+        float model_scale = 4.0f;
+        vec3 scaling_vector = Vec3(model_size_in_pixels * model_scale,
+                                   model_size_in_pixels * model_scale,
+                                   1.0f);
+        mat4 model = Scale(scaling_vector);
+        
+        vec3 player_p = Vec3(0.5f, 0.5f, 0.0f);
+        mat4 view = Translate(MultiplyVec3(player_p, scaling_vector));
+        
+        mat4 projection = Orthographic(0, (float)global_app.screen_w,
+                                       0, (float)global_app.screen_h,
+                                       -1.0f, 1.0f);
+        
+        mat4 uv_projection = Mat4TileUV(0, 8, texture_w, texture_h, 8);
+        
+        SetMat4Uniform(program, "u_model", &model);
+        SetMat4Uniform(program, "u_view", &view);
+        SetMat4Uniform(program, "u_projection", &projection);
+        SetMat4Uniform(program, "u_uv_projection", &uv_projection);
+        
+        
         glBindVertexArray(VAO);
         //glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
         glDrawArrays(GL_TRIANGLES, 0, 6);
