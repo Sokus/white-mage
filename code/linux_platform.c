@@ -205,6 +205,42 @@ mat4 Mat4TileUV(int tile_x, int tile_y,
     return result;
 }
 
+typedef enum SpriteID
+{
+    SpriteID_PlayerRed    = 0,
+    SpriteID_PlayerGreen  = 1,
+    SpriteID_PlayerBlue   = 2,
+    SpriteID_Dwarf_0      = 3,
+    SpriteID_Dwarf_1      = 6,
+    SpriteID_Dwarf_2      = 9,
+    SpriteID_Skeleton_0   = 12,
+    SpriteID_Skeleton_1   = 15,
+    SpriteID_Wolf         = 18,
+    
+    SpriteID_Bricks       = 6*16,
+    SpriteID_Bush         = 6*16 + 1*3,
+    SpriteID_Boulder      = 6*16 + 2*3,
+    
+    SpriteID_Grass_0      = 8*16,
+    SpriteID_Grass_1      = 8*16 + 1*3,
+    SpriteID_Grass_2      = 8*16 + 2*3,
+    SpriteID_Water_0      = 8*16 + 3*3,
+    SpriteID_Water_1      = 8*16 + 4*3,
+    SpriteID_Water_2      = 8*16 + 5*3,
+    
+    SpriteID_Door_0       = 12*16,
+    SpriteID_Door_1       = 12*16 + 1*3,
+    SpriteID_Chest        = 12*16 + 2*3,
+    SpriteID_Table_0      = 12*16 + 3*3,
+    SpriteID_Table_1      = 12*16 + 4*3,
+    SpriteID_Table_2      = 12*16 + 5*3,
+    SpriteID_Chair        = 13*16 + 0*3 + 2,
+    SpriteID_Barrel       = 13*16 + 1*3 + 2,
+    SpriteID_Bookshelf_0  = 13*16 + 2*3 + 2,
+    SpriteID_BookShelf_1  = 13*16 + 3*3 + 2,
+    SpriteID_Grave        = 13*16 + 4*3 + 2
+} SpriteID;
+
 int main(void)
 {
     if(SDL_Init(SDL_INIT_VIDEO) != 0)
@@ -251,56 +287,89 @@ int main(void)
     char *vertex_shader_source = "#version 420 core\n"
         "layout (location = 0) in vec3 a_pos;\n"
         "layout (location = 1) in vec2 a_tex_coord;\n"
-        "out vec2 tex_coord;\n"
+        "out vec2 uv;\n"
         "uniform mat4 u_model;\n"
         "uniform mat4 u_view;\n"
         "uniform mat4 u_projection;\n"
         "void main()\n"
         "{\n"
         "    gl_Position = u_projection * u_view * u_model * vec4(a_pos, 1.0f);\n"
-        "    tex_coord = a_tex_coord;\n"
+        "    uv = a_tex_coord;\n"
         "}\0";
     
     char *fragment_shader_source = "#version 420 core\n"
         "out vec4 frag_color;\n"
-        "in vec2 tex_coord;\n"
-        "uniform sampler2D u_texture;\n"
-        "uniform mat4 u_uv_projection;\n"
+        "in vec2 uv;\n"
+        "uniform sampler2DArray u_textures;\n"
+        "uniform int u_layer;"
         "void main()\n"
         "{\n"
-        "vec4 tex_coord_p = u_uv_projection * vec4(tex_coord, 0.0f, 1.0f);\n"
-        "frag_color = texture(u_texture, tex_coord_p.xy);\n"
+        "    frag_color = texture(u_textures, vec3(uv, u_layer));\n"
         "}\0";
     
     
     // create and bind texture
     unsigned int texture;
     glGenTextures(1, &texture);
-    glBindTexture(GL_TEXTURE_2D, texture);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, texture);
     // set parameters (sampling/border)
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
     float texture_border_color[] = { 1.0f, 0.0f, 1.0f, 1.0f };
-    glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, texture_border_color);
-    GLint filtering = 1 ? GL_NEAREST : GL_LINEAR;
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filtering);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filtering);
+    glTexParameterfv(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_BORDER_COLOR, texture_border_color);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     // load the texture data
     int texture_w, texture_h, texture_ch;
-    stbi_set_flip_vertically_on_load(true);  
+    // stbi_set_flip_vertically_on_load(true);  
     unsigned char *texture_data = stbi_load("../assets/trinity.png", &texture_w, &texture_h, &texture_ch, 0);
     if(texture_data)
     {
-        glTexImage2D(GL_TEXTURE_2D,
-                     0,                // mipmap level
-                     GL_RGB,           // texture store format
-                     texture_w,
-                     texture_h,
-                     0,
-                     GL_RGB,           // texture read format
-                     GL_UNSIGNED_BYTE,
-                     texture_data);
-        // glGenerateMipmap(GL_TEXTURE_2D);
+        int tile_w = 8;
+        int tile_h = 8;
+        int channels = 3;
+        
+        int tiles_x = 16;
+        int tiles_y = 16;
+        int tile_count = tiles_x * tiles_y;
+        
+        unsigned char buffer[8*8*3];
+        if(ARRAY_SIZE(buffer) < (unsigned int)(tile_w * tile_h * channels))
+        {
+            fprintf(stderr, "Insufficient temporary tile buffersize!\n");
+            INVALID_CODE_PATH;
+        }
+        
+        glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGB,
+                     tile_w, tile_h, tile_count, 0,
+                     GL_RGB, GL_UNSIGNED_BYTE, 0);
+        
+        int tile_stride = tile_w * channels;
+        int row_stride = tile_stride * tiles_x;
+        
+        for(int iy = 0; iy < tiles_y; ++iy)
+        {
+            for(int ix = 0; ix < tiles_x; ++ix)
+            {
+                int offset = iy * row_stride * tile_h + ix * tile_stride;
+                unsigned char *tile_corner_ptr = texture_data + offset;
+                
+                for(int tex_y = 0; tex_y < tile_h; ++tex_y)
+                {
+                    unsigned char *src = tile_corner_ptr + tex_y * row_stride;
+                    unsigned char *dst = buffer + (tile_h - tex_y - 1) * tile_w * channels;
+                    MEMORY_COPY(dst, src, (unsigned int)(tile_w * channels));
+                }
+                
+                int layer_idx = iy * tiles_x + ix;
+                
+                glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0,
+                                layer_idx, tile_w, tile_h, 1, GL_RGB,
+                                GL_UNSIGNED_BYTE, buffer);
+            }
+        }
+        
+        
     }
     else
     {
@@ -338,7 +407,7 @@ int main(void)
     glEnableVertexAttribArray(1);
     
     UseProgram(program);
-    SetIntUniform(program, "u_texture", 0);
+    SetIntUniform(program, "u_textures", 0);
     
     // Input *input = &global_app.input;
     
@@ -370,13 +439,11 @@ int main(void)
                                        0, (float)global_app.screen_h,
                                        -1.0f, 1.0f);
         
-        mat4 uv_projection = Mat4TileUV(0, 8, texture_w, texture_h, 8);
-        
         SetMat4Uniform(program, "u_model", &model);
         SetMat4Uniform(program, "u_view", &view);
         SetMat4Uniform(program, "u_projection", &projection);
-        SetMat4Uniform(program, "u_uv_projection", &uv_projection);
         
+        SetIntUniform(program, "u_layer", SpriteID_Skeleton_1);
         
         glBindVertexArray(VAO);
         //glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
