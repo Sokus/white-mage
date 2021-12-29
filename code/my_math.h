@@ -245,6 +245,15 @@ vec3 Vec3i(int x, int y, int z)
     return result;
 }
 
+vec3 Vec3v(vec2 xy, float z)
+{
+    vec3 result;
+    result.x = xy.x;
+    result.y = xy.y;
+    result.z = z;
+    return result;
+}
+
 vec4 Vec4(float x, float y, float z, float w)
 {
     vec4 result;

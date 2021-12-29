@@ -19,19 +19,24 @@
 // Platform specific/temporary
 #include <stdio.h>
 
+typedef struct SDLData
+{
+    SDL_Window *window;
+    SDL_GLContext gl_context;
+} SDLData;
+
 typedef struct App
 {
     bool is_running;
     
-    SDL_Window *window;
     bool fullscreen;
     int screen_w;
     int screen_h;
     
     Input input;
+    
+    SDLData sdl_data;
 } App;
-
-App global_app;
 
 internal void DieSDL(char *message)
 {
@@ -39,13 +44,13 @@ internal void DieSDL(char *message)
     exit(2);
 }
 
-internal void HandleSDLEvent(SDL_Event *event)
+internal void HandleSDLEvent(App *app, SDL_Event *event)
 {
     switch(event->type)
     {
         case SDL_QUIT:
         {
-            global_app.is_running = false;
+            app->is_running = false;
         } break;
         
         case SDL_KEYDOWN:
@@ -62,7 +67,7 @@ internal void HandleSDLEvent(SDL_Event *event)
             if(event->key.repeat == 0)
             {
 #define _SDL_PROCESS_KEYBOARD_MESSAGE(keycode, input_key)\
-case keycode: { global_app.input.keys_down[(input_key)] = is_down; } break
+case keycode: { app->input.keys_down[(input_key)] = is_down; } break
                 switch(kc)
                 {
                     _SDL_PROCESS_KEYBOARD_MESSAGE(SDLK_w,      InputKey_MoveUp);
@@ -84,16 +89,16 @@ case keycode: { global_app.input.keys_down[(input_key)] = is_down; } break
                 if((alt_is_down && kc == SDLK_RETURN)
                    || (kc == SDLK_F11))
                 {
-                    global_app.fullscreen = !global_app.fullscreen;
-                    SDL_WindowFlags flags = (global_app.fullscreen
+                    app->fullscreen = !app->fullscreen;
+                    SDL_WindowFlags flags = (app->fullscreen
                                              ? SDL_WINDOW_FULLSCREEN_DESKTOP
                                              : 0);
-                    SDL_SetWindowFullscreen(global_app.window, flags);
+                    SDL_SetWindowFullscreen(app->sdl_data.window, flags);
                 }
                 
                 if(alt_is_down && kc == SDLK_F4)
                 {
-                    global_app.is_running = false;
+                    app->is_running = false;
                 }
             }
         } break;
@@ -104,10 +109,10 @@ case keycode: { global_app.input.keys_down[(input_key)] = is_down; } break
             {
                 case SDL_WINDOWEVENT_SIZE_CHANGED:
                 {
-                    SDL_GetWindowSize(global_app.window,
-                                      &global_app.screen_w,
-                                      &global_app.screen_h);
-                    glViewport(0, 0, global_app.screen_w, global_app.screen_h);
+                    SDL_GetWindowSize(app->sdl_data.window,
+                                      &app->screen_w,
+                                      &app->screen_h);
+                    glViewport(0, 0, app->screen_w, app->screen_h);
                 } break;
             }
         } break;
@@ -297,7 +302,118 @@ float SDLGetSecondsElapsed(unsigned long int start_counter, unsigned long int en
     return result;
 }
 
-int main(void)
+typedef struct TextureAtlas
+{
+    unsigned int texture_id;
+    int width;
+    int height;
+    int channels;
+    int tile_w;
+    int tile_h;
+    int tiles_x;
+    int tiles_y;
+    int tile_count;
+} TextureAtlas;
+
+#define MAX_TILE_SIZE 32
+TextureAtlas LoadTextureAtlas(char *path, int tile_w, int tile_h, int channels)
+{
+    TextureAtlas result = {0};
+    
+    int width;
+    int height;
+    int source_channels;
+    unsigned char *data = stbi_load(path, &width, &height, &source_channels, channels);
+    // stbi_set_flip_vertically_on_load(true);
+    if(data)
+    {
+        int tiles_x = width / tile_w;
+        int tiles_y = height / tile_h;
+        int tile_count = tiles_x * tiles_y;
+        int tile_stride = tile_w * channels;
+        int row_stride = tile_stride * tiles_x;
+        
+        if(width % tile_w != 0 || height % tile_h != 0)
+        {
+            char *message = "Warning! Texture sizes not a multiple of tile width/height! Texture size: %dx%d, Tile size: %dx%d\n";
+            fprintf(stderr, message, width, height, tile_w, tile_h);
+        }
+        
+        if(source_channels != channels)
+        {
+            fprintf(stderr, "Warning! Texture channel conversion!\n");
+        }
+        
+        ASSERT(channels >= 3 && channels <= 4);
+        GLint format = (channels == 3 ? GL_RGB :
+                        channels == 4 ? GL_RGBA : GL_RGBA);
+        
+        unsigned int texture_id;
+        glGenTextures(1, &texture_id);
+        glBindTexture(GL_TEXTURE_2D_ARRAY, texture_id);
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+        float texture_border_color[] = { 1.0f, 0.0f, 1.0f, 1.0f };
+        glTexParameterfv(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_BORDER_COLOR, texture_border_color);
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, format, tile_w, tile_h, tile_count, 0,
+                     (GLenum)format, GL_UNSIGNED_BYTE, 0);
+        
+        // TODO(sokus): Push tile data into a bigger chunk of
+        // memory to allow tiles larger than 32x32
+        unsigned char tile_buffer[MAX_TILE_SIZE*MAX_TILE_SIZE*4];
+        ASSERT(tile_w > 0 && tile_h > 0 && tile_w <= MAX_TILE_SIZE && tile_h <= MAX_TILE_SIZE);
+        
+        for(int iy = 0; iy < tiles_y; ++iy)
+        {
+            for(int ix = 0; ix < tiles_x; ++ix)
+            {
+                int offset = iy * row_stride * tile_h + ix * tile_stride;
+                unsigned char *tile_corner_ptr = data + offset;
+                
+                for(int tex_y = 0; tex_y < tile_h; ++tex_y)
+                {
+                    unsigned char *src = tile_corner_ptr + tex_y * row_stride;
+                    unsigned char *dst = tile_buffer + (tile_h - tex_y - 1) * tile_w * channels;
+                    MEMORY_COPY(dst, src, (unsigned int)(tile_w * channels));
+                }
+                
+                int layer_idx = iy * tiles_x + ix;
+                
+                glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0,
+                                layer_idx, tile_w, tile_h, 1, (GLenum)format,
+                                GL_UNSIGNED_BYTE, tile_buffer);
+            }
+        }
+        
+        result.texture_id = texture_id;
+        result.width = width;
+        result.height = height;
+        result.channels = channels;
+        result.tile_w = tile_w;
+        result.tile_h = tile_h;
+        result.tiles_x = tiles_x;
+        result.tiles_y = tiles_y;
+        result.tile_count = tile_count;
+    }
+    else
+    {
+        fprintf(stderr, "Could not find or load texture: %s\n", path);
+        INVALID_CODE_PATH;
+    }
+    stbi_image_free(data);
+    
+    
+    return result;
+}
+
+void UseTextureAtlas(TextureAtlas *texture_atlas)
+{
+    glBindTexture(GL_TEXTURE_2D_ARRAY, texture_atlas->texture_id);
+}
+
+void InitialiseSDL(char *window_title, int screen_width, int screen_height, SDLData *sdl_data)
 {
     if(SDL_Init(SDL_INIT_VIDEO) != 0)
         DieSDL("Couldn't initialize SDL");
@@ -309,20 +425,11 @@ int main(void)
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 0);
     // SDL_GL_SetSwapInterval(1);
     
-    global_app.screen_w = 960;
-    global_app.screen_h = 540;
-    
     SDL_WindowFlags window_flags = (SDL_WindowFlags)(SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
-    SDL_Window *window = SDL_CreateWindow("Card Game",
-                                          SDL_WINDOWPOS_CENTERED,
-                                          SDL_WINDOWPOS_CENTERED,
-                                          global_app.screen_w,
-                                          global_app.screen_h,
-                                          window_flags);
-    
+    SDL_Window *window = SDL_CreateWindow(window_title, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+                                          screen_width, screen_height, window_flags);
     if(window == 0)
         DieSDL("Couldn't create a window");
-    global_app.window = window;
     
     SDL_GLContext gl_context = SDL_GL_CreateContext(window);
     if(gl_context == 0)
@@ -330,6 +437,13 @@ int main(void)
     SDL_GL_MakeCurrent(window, gl_context);
     
     gladLoadGLLoader(SDL_GL_GetProcAddress);
+    
+    sdl_data->window = window;
+    sdl_data->gl_context = gl_context;
+}
+
+void InitialiseGL(void)
+{
     // printf("Vendor:   %s\n", glGetString(GL_VENDOR));
     // printf("Renderer: %s\n", glGetString(GL_RENDERER));
     // printf("Version:  %s\n", glGetString(GL_VERSION));
@@ -337,19 +451,53 @@ int main(void)
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
     
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);  
+    
     // glClearColor(0, 0, 0, 0);
     glClearColor(46.0f/256.0f, 34.0f/256.0f, 47.0f/256.0f, 1.0f);
+}
+
+int main(void)
+{
+    App app = {0};
+    
+    app.screen_w = 960;
+    app.screen_h = 540;
+    InitialiseSDL("Card Game", app.screen_w, app.screen_h, &app.sdl_data);
+    InitialiseGL();
+    
+    TextureAtlas texture_atlas = LoadTextureAtlas("../assets/textures.png", 8, 8, 3);
+    //TextureAtlas glyph_atlas = LoadTextureAtlas("../assets/glyphs.png", 8, 8, 4);
+    
+    float game_update_hz = 60.0f;
+    float target_seconds_per_frame = 1.0f / game_update_hz;
+    float dt = target_seconds_per_frame;
+    
+    Input *input = &app.input;
+    InitializeInput(input);
+    
+    vec2 player_p = Vec2(0.5f, 0.5f);
+    float player_move_timer = 0.0f;
+    float player_move_time = 0.35f;
+    int player_direction = 1.0f;
+    
+    vec2 camera_p = Vec2(0.0f, 0.0f);
+    
     
     char *vertex_shader_source = "#version 420 core\n"
         "layout (location = 0) in vec3 a_pos;\n"
         "layout (location = 1) in vec2 a_tex_coord;\n"
         "out vec2 uv;\n"
         "uniform mat4 u_model;\n"
+        "uniform mat4 u_world;\n"
         "uniform mat4 u_view;\n"
+        "uniform mat4 u_scale;\n"
         "uniform mat4 u_projection;\n"
         "void main()\n"
         "{\n"
-        "    gl_Position = u_projection * u_view * u_model * vec4(a_pos, 1.0f);\n"
+        "    mat4 transformation = u_projection * u_scale * u_view * u_world * u_model;\n"
+        "    gl_Position = transformation * vec4(a_pos, 1.0f);\n"
         "    uv = a_tex_coord;\n"
         "}\0";
     
@@ -366,76 +514,6 @@ int main(void)
         "        uv_p.x = uv.x * -1.0f + 1.0f;\n"
         "    frag_color = texture(u_textures, vec3(uv_p, u_layer));\n"
         "}\0";
-    
-    
-    // create and bind texture
-    unsigned int texture;
-    glGenTextures(1, &texture);
-    glBindTexture(GL_TEXTURE_2D_ARRAY, texture);
-    // set parameters (sampling/border)
-    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-    float texture_border_color[] = { 1.0f, 0.0f, 1.0f, 1.0f };
-    glTexParameterfv(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_BORDER_COLOR, texture_border_color);
-    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    // load the texture data
-    int texture_w, texture_h, texture_ch;
-    // stbi_set_flip_vertically_on_load(true);  
-    unsigned char *texture_data = stbi_load("../assets/trinity.png", &texture_w, &texture_h, &texture_ch, 0);
-    if(texture_data)
-    {
-        int tile_w = 8;
-        int tile_h = 8;
-        int channels = 3;
-        
-        int tiles_x = 16;
-        int tiles_y = 16;
-        int tile_count = tiles_x * tiles_y;
-        
-        unsigned char buffer[8*8*3];
-        if(ARRAY_SIZE(buffer) < (unsigned int)(tile_w * tile_h * channels))
-        {
-            fprintf(stderr, "Insufficient temporary tile buffersize!\n");
-            INVALID_CODE_PATH;
-        }
-        
-        glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGB,
-                     tile_w, tile_h, tile_count, 0,
-                     GL_RGB, GL_UNSIGNED_BYTE, 0);
-        
-        int tile_stride = tile_w * channels;
-        int row_stride = tile_stride * tiles_x;
-        
-        for(int iy = 0; iy < tiles_y; ++iy)
-        {
-            for(int ix = 0; ix < tiles_x; ++ix)
-            {
-                int offset = iy * row_stride * tile_h + ix * tile_stride;
-                unsigned char *tile_corner_ptr = texture_data + offset;
-                
-                for(int tex_y = 0; tex_y < tile_h; ++tex_y)
-                {
-                    unsigned char *src = tile_corner_ptr + tex_y * row_stride;
-                    unsigned char *dst = buffer + (tile_h - tex_y - 1) * tile_w * channels;
-                    MEMORY_COPY(dst, src, (unsigned int)(tile_w * channels));
-                }
-                
-                int layer_idx = iy * tiles_x + ix;
-                
-                glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0,
-                                layer_idx, tile_w, tile_h, 1, GL_RGB,
-                                GL_UNSIGNED_BYTE, buffer);
-            }
-        }
-        
-        
-    }
-    else
-    {
-        fprintf(stderr, "Failed to load texture.\n");
-    }
-    stbi_image_free(texture_data);
     
     unsigned int program = CreateProgram(vertex_shader_source, fragment_shader_source);
     
@@ -467,28 +545,18 @@ int main(void)
     glEnableVertexAttribArray(1);
     
     UseProgram(program);
-    SetIntUniform(program, "u_textures", 0);
     
-    float game_update_hz = 60.0f;
-    float target_seconds_per_frame = 1.0f / game_update_hz;
-    float dt = target_seconds_per_frame;
-    
-    Input *input = &global_app.input;
-    InitializeInput(input);
-    
-    vec2 player_p = Vec2(0.5f, 0.5f);
-    float player_move_timer = 0.0f;
-    float player_move_time = 0.35f;
-    int player_direction = 1.0f;
+    UseTextureAtlas(&texture_atlas);
+    // UseTextureAtlas(&glyph_atlas);
     
     unsigned long int last_counter = SDL_GetPerformanceCounter();
-    global_app.is_running = true;
-    while(global_app.is_running)
+    app.is_running = true;
+    while(app.is_running)
     {
         SDL_Event event;
         while(SDL_PollEvent(&event))
         {
-            HandleSDLEvent(&event);
+            HandleSDLEvent(&app, &event);
         }
         
         UpdateInput(input, dt);
@@ -524,22 +592,21 @@ int main(void)
         
         UseProgram(program);
         
-        float model_size_in_pixels = 8.0f;
-        float model_scale = 4.0f;
-        vec3 scaling_vector = Vec3(model_size_in_pixels * model_scale,
-                                   model_size_in_pixels * model_scale,
-                                   1.0f);
-        mat4 model = Scale(scaling_vector);
+        float units_per_meter = 8.0f;
+        float scale = 4.0f;
         
-        vec3 player_p_vec3 = Vec3(player_p.x, player_p.y, 0.0f);
-        mat4 view = Translate(MultiplyVec3(player_p_vec3, scaling_vector));
-        
-        mat4 projection = Orthographic(0, (float)global_app.screen_w,
-                                       0, (float)global_app.screen_h,
+        mat4 model = Mat4d(1.0f);
+        mat4 world = Translate(Vec3v(player_p, 0.0f));
+        mat4 view  = Translate(MultiplyVec3f(Vec3v(camera_p, 0.0f), -1.0f));
+        mat4 global_scale = Scale(Vec3(units_per_meter*scale, units_per_meter*scale, 1.0f));
+        mat4 projection = Orthographic(0, (float)app.screen_w,
+                                       0, (float)app.screen_h,
                                        -1.0f, 1.0f);
         
         SetMat4Uniform(program, "u_model", &model);
+        SetMat4Uniform(program, "u_world", &world);
         SetMat4Uniform(program, "u_view", &view);
+        SetMat4Uniform(program, "u_scale", &global_scale);
         SetMat4Uniform(program, "u_projection", &projection);
         
         SetIntUniform(program, "u_layer", SpriteID_PlayerBlue);
@@ -548,7 +615,7 @@ int main(void)
         glBindVertexArray(VAO);
         glDrawArrays(GL_TRIANGLES, 0, 6);
         
-        SDL_GL_SwapWindow(window);
+        SDL_GL_SwapWindow(app.sdl_data.window);
         
         unsigned long int work_counter = SDL_GetPerformanceCounter();
         float work_in_seconds = SDLGetSecondsElapsed(last_counter, work_counter);
@@ -563,8 +630,8 @@ int main(void)
         last_counter = SDL_GetPerformanceCounter();
     }
     
-    SDL_GL_DeleteContext(gl_context);
-    SDL_DestroyWindow(window);
+    SDL_GL_DeleteContext(app.sdl_data.gl_context);
+    SDL_DestroyWindow(app.sdl_data.window);
     SDL_Quit();
     
     return 0;
