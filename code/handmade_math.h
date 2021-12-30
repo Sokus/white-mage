@@ -1,7 +1,7 @@
 /* date = December 25th 2021 6:11 pm */
 
-#ifndef MY_MATH_H
-#define MY_MATH_H
+#ifndef HANDMADE_MATH_H
+#define HANDMADE_MATH_H
 
 #include "math.h"    // sinf, cosf ...
 #include "stdbool.h" // comparisons
@@ -557,7 +557,6 @@ vec4 NormalizeVec4(vec4 a)
 }
 
 // matrix functions
-
 mat4 Mat4(void)
 {
     mat4 result = {0};
@@ -706,45 +705,73 @@ mat4 Perspective(float fov, float aspect_ratio, float near, float far)
     return result;
 }
 
-mat4 Translate(vec3 translation)
+mat4 Translate(mat4 matrix, float x, float y, float z)
 {
-    mat4 result = Mat4d(1.0f);
-    result.elements[3][0] = translation.x;
-    result.elements[3][1] = translation.y;
-    result.elements[3][2] = translation.z;
+    mat4 translate = Mat4d(1.0f);
+    translate.elements[3][0] = x;
+    translate.elements[3][1] = y;
+    translate.elements[3][2] = z;
+    
+    mat4 result = MultiplyMat4(translate, matrix);
     return result;
 }
 
-mat4 Rotate(float angle, vec3 axis)
+mat4 TranslateVec3(mat4 matrix, vec3 translation)
 {
-    mat4 result = Mat4d(1.0f);
-    axis = NormalizeVec3(axis);
+    mat4 result = Translate(matrix, translation.x, translation.y, translation.z);
+    return result;
+}
+
+mat4 Rotate(mat4 matrix, float angle, float axis_x, float axis_y, float axis_z)
+{
+    mat4 rotate = Mat4d(1.0f);
+    
+    float mag_sq = SQUARE(axis_x) + SQUARE(axis_y) + SQUARE(axis_z);
+    float mag = SQRTF(mag_sq);
+    float axis_x_n = (mag > 0.0f) ? axis_x / SQRTF(mag) : axis_x;
+    float axis_y_n = (mag > 0.0f) ? axis_y / SQRTF(mag) : axis_y;
+    float axis_z_n = (mag > 0.0f) ? axis_z / SQRTF(mag) : axis_z;
     
     float sin_theta = SinF(ToRadians(angle));
     float cos_theta = CosF(ToRadians(angle));
     float cos_value = 1.0f - cos_theta;
     
-    result.elements[0][0] = (axis.x * axis.x * cos_value) + cos_theta;
-    result.elements[0][1] = (axis.x * axis.y * cos_value) + (axis.z * sin_theta);
-    result.elements[0][2] = (axis.x * axis.z * cos_value) - (axis.y * sin_theta);
+    rotate.elements[0][0] = (axis_x_n * axis_x_n * cos_value) + cos_theta;
+    rotate.elements[0][1] = (axis_x_n * axis_y_n * cos_value) + (axis_z_n * sin_theta);
+    rotate.elements[0][2] = (axis_x_n * axis_z_n * cos_value) - (axis_y_n * sin_theta);
     
-    result.elements[1][0] = (axis.y * axis.x * cos_value) - (axis.z * sin_theta);
-    result.elements[1][1] = (axis.y * axis.y * cos_value) + cos_theta;
-    result.elements[1][2] = (axis.y * axis.z * cos_value) + (axis.x * sin_theta);
+    rotate.elements[1][0] = (axis_y_n * axis_x_n * cos_value) - (axis_z_n * sin_theta);
+    rotate.elements[1][1] = (axis_y_n * axis_y_n * cos_value) + cos_theta;
+    rotate.elements[1][2] = (axis_y_n * axis_z_n * cos_value) + (axis_x_n * sin_theta);
     
-    result.elements[2][0] = (axis.z * axis.x * cos_value) + (axis.y * sin_theta);
-    result.elements[2][1] = (axis.z * axis.y * cos_value) - (axis.x * sin_theta);
-    result.elements[2][2] = (axis.z * axis.z * cos_value) + cos_theta;
+    rotate.elements[2][0] = (axis_z_n * axis_x_n * cos_value) + (axis_y_n * sin_theta);
+    rotate.elements[2][1] = (axis_z_n * axis_y_n * cos_value) - (axis_x_n * sin_theta);
+    rotate.elements[2][2] = (axis_z_n * axis_z_n * cos_value) + cos_theta;
     
+    mat4 result = MultiplyMat4(rotate, matrix);
     return result;
 }
 
-mat4 Scale(vec3 scale)
+mat4 RotateVec3(mat4 matrix, float angle, vec3 axis)
 {
-    mat4 result = Mat4d(1.0f);
-    result.elements[0][0] = scale.x;
-    result.elements[1][1] = scale.y;
-    result.elements[2][2] = scale.z;
+    mat4 result = Rotate(matrix, angle, axis.x, axis.y, axis.z);
+    return result;
+}
+
+mat4 Scale(mat4 matrix, float x, float y, float z)
+{
+    mat4 scale = Mat4d(1.0f);
+    scale.elements[0][0] = x;
+    scale.elements[1][1] = y;
+    scale.elements[2][2] = z;
+    
+    mat4 result = MultiplyMat4(scale, matrix);
+    return result;
+}
+
+mat4 ScaleVec3(mat4 matrix, vec3 scale)
+{
+    mat4 result = Scale(matrix, scale.x, scale.y, scale.z);
     return result;
 }
 
@@ -778,4 +805,4 @@ mat4 LookAt(vec3 eye, vec3 center, vec3 up)
     return result;
 }
 
-#endif //MY_MATH_H
+#endif //HANDMADE_MATH_H
