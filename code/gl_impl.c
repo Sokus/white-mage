@@ -171,3 +171,20 @@ TextureAtlas LoadTextureAtlas(char *path, int tile_w, int tile_h, int channels)
     
     return result;
 }
+
+void UpdateWorldToClipTransformation(GLState *gl_state,
+                                     float camera_x, float camera_y,
+                                     int screen_width, int screen_height,
+                                     float scaling_factor)
+{
+    mat4 projection = Translate(Mat4d(1.0f), -camera_x, -camera_y, 0.0f);
+    projection = Scale(projection, scaling_factor, scaling_factor, 1.0f);
+    
+    mat4 orthographic = Orthographic(0.0f, (float)screen_width,
+                                     0.0f, (float)screen_height,
+                                     -1.0f, 1.0f);
+    projection = MultiplyMat4(orthographic, projection);
+    gl_state->world_to_clip = projection;
+}
+
+

@@ -1,7 +1,7 @@
 // Platform independent
 #include "base.h"    
 #include "game_platform.h"       // platform-game communication
-#include "my_math.h"
+#include "handmade_math.h"
 
 // External
 #include "SDL2/SDL.h"            // window/context creation
@@ -28,17 +28,6 @@ internal void DieSDL(char *message)
 {
     fprintf(stderr, "%s: %s\n", message, SDL_GetError());
     exit(2);
-}
-
-void UpdateScreenSize(App *app)
-{
-    SDL_GetWindowSize(app->sdl_state.window,
-                      &app->screen_w,
-                      &app->screen_h);
-    glViewport(0, 0, app->screen_w, app->screen_h);
-    app->gl_state.camera_to_clip = Orthographic(0.0f, (float)app->screen_w,
-                                                0.0f, (float)app->screen_h,
-                                                0.0f, 1.0f);
 }
 
 internal void HandleSDLEvent(App *app, SDL_Event *event)
@@ -106,7 +95,11 @@ case keycode: { app->input.keys_down[(input_key)] = is_down; } break
             {
                 case SDL_WINDOWEVENT_SIZE_CHANGED:
                 {
-                    UpdateScreenSize(app);
+                    int screen_width, screen_height;
+                    SDL_GetWindowSize(app->sdl_state.window, &screen_width, &screen_height); 
+                    app->screen_width = screen_width;
+                    app->screen_height = screen_height;
+                    glViewport(0, 0, screen_width, screen_height);
                 } break;
             }
         } break;
@@ -161,11 +154,11 @@ void InitialiseGL(GLState *gl_state)
         "layout (location = 0) in vec2 a_pos;\n"
         "layout (location = 1) in vec2 a_tex_coord;\n"
         "out vec2 uv;\n"
-        "uniform mat4 u_model_to_camera;\n"
-        "uniform mat4 u_camera_to_clip;\n"
+        "uniform mat4 u_model_to_world;\n"
+        "uniform mat4 u_world_to_clip;\n"
         "void main()\n"
         "{\n"
-        "    mat4 transformation = u_camera_to_clip * u_model_to_camera;\n"
+        "    mat4 transformation = u_world_to_clip * u_model_to_world;\n"
         "    gl_Position = transformation * vec4(a_pos, 0.0f, 1.0f);\n"
         "    uv = a_tex_coord;\n"
         "}\0";
@@ -217,18 +210,15 @@ void InitialiseGL(GLState *gl_state)
     gl_state->program = program;
 }
 
-void RenderSprite(GLState *gl_state, vec2 player_p, vec2 camera_p,
-                  float scale, int sprite_id, bool flip)
+void RenderSprite(GLState *gl_state, vec2 player_p, int sprite_id, bool flip)
 {
-    mat4 model_to_camera = Translate(Mat4d(1.0f), player_p.x, player_p.y, 0.0f);
-    model_to_camera = Translate(model_to_camera, -camera_p.x, -camera_p.y, 0.0f);
-    model_to_camera = Scale(model_to_camera, scale, scale, 1.0f);
+    mat4 model_to_world = Translate(Mat4d(1.0f), player_p.x, player_p.y, 0.0f);
     
     glBindVertexArray(gl_state->quad_vao);
     glUseProgram(gl_state->program);
     
-    SetMat4Uniform(gl_state->program, "u_model_to_camera", &model_to_camera);
-    SetMat4Uniform(gl_state->program, "u_camera_to_clip", &gl_state->camera_to_clip);
+    SetMat4Uniform(gl_state->program, "u_model_to_world", &model_to_world);
+    SetMat4Uniform(gl_state->program, "u_world_to_clip", &gl_state->world_to_clip);
     SetIntUniform(gl_state->program,  "u_layer", sprite_id);
     SetBoolUniform(gl_state->program, "u_flip", flip);
     
@@ -242,11 +232,10 @@ int main(void)
 {
     App app = {0};
     
-    app.screen_w = 960;
-    app.screen_h = 540;
-    InitialiseSDL("Card Game", app.screen_w, app.screen_h, &app.sdl_state);
+    app.screen_width = 960;
+    app.screen_height = 540;
+    InitialiseSDL("Card Game", app.screen_width, app.screen_height, &app.sdl_state);
     InitialiseGL(&app.gl_state);
-    UpdateScreenSize(&app);
     
     TextureAtlas texture_atlas = LoadTextureAtlas("../assets/textures.png", 8, 8, 3);
     //TextureAtlas glyph_atlas = LoadTextureAtlas("../assets/glyphs.png", 8, 8, 4);
@@ -290,6 +279,14 @@ int main(void)
         if(IsDown(input, InputKey_MoveRight))
             move_x += 1;
         
+        float units_per_meter = 8.0f;
+        float size_mul = 4.0f;
+        float scale = units_per_meter * size_mul;
+        UpdateWorldToClipTransformation(&app.gl_state,
+                                        camera_p.x, camera_p.y,
+                                        app.screen_width, app.screen_height,
+                                        scale);
+        
         // only allow movement in one direction
         if((move_x != 0 && move_y == 0) || (move_x == 0 && move_y != 0))
         {
@@ -307,12 +304,8 @@ int main(void)
         //Rendering
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         
-        
-        float units_per_meter = 8.0f;
-        float size_mul = 4.0f;
-        float scale = units_per_meter * size_mul;
         bool flip = (player_direction < 0);
-        RenderSprite(&app.gl_state, player_p, camera_p, scale, SpriteID_PlayerBlue, flip);
+        RenderSprite(&app.gl_state, player_p, SpriteID_PlayerBlue, flip);
         
         SDL_GL_SwapWindow(app.sdl_state.window);
         

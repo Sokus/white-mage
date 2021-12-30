@@ -15,7 +15,7 @@ typedef struct GLState
     char *renderer;
     char *version;
     
-    mat4 camera_to_clip;
+    mat4 world_to_clip;
     
     unsigned int quad_vao;
     
@@ -27,8 +27,8 @@ typedef struct App
     bool is_running;
     
     bool fullscreen;
-    int screen_w;
-    int screen_h;
+    int screen_width;
+    int screen_height;
     
     Input input;
     
