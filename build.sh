@@ -25,4 +25,4 @@ external_flags="-I$inc_dir $sdl_flags -lGL -ldl"
 mkdir -p build
 cd build
 
-gcc $sources -o card-game.out $common $warnings $external_flags 
+gcc $sources -o white-mage.out $common $warnings $external_flags 

@@ -1,7 +1,7 @@
 /* date = December 22nd 2021 2:33 pm */
 
-#ifndef GAME_PLATFORM_H
-#define GAME_PLATFORM_H
+#ifndef WHITE_MAGE_PLATFORM_H
+#define WHITE_MAGE_PLATFORM_H
 
 typedef enum InputKey
 {
@@ -93,4 +93,4 @@ typedef struct TextureAtlas
     int tile_count;
 } TextureAtlas;
 
-#endif //GAME_PLATFORM_H
+#endif //WHITE_MAGE_PLATFORM_H
