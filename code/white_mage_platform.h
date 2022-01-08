@@ -91,7 +91,7 @@ typedef enum SpriteID
 typedef struct Texture
 {
     bool is_loaded;
-    void *data;
+    unsigned char *data;
     
     int width;
     int height;
@@ -102,5 +102,10 @@ typedef struct Texture
     int tile_count_y;
     int tile_count;
 } Texture;
+
+typedef struct Command
+{
+    
+}
 
 #endif //WHITE_MAGE_PLATFORM_H

@@ -1,5 +1,6 @@
 typedef struct OpenGL3_Texture
 {
+    bool is_loaded;
     GLuint id;
     Texture *texture;
 } OpenGL3_Texture;
@@ -69,14 +70,100 @@ bool CheckProgram(GLuint handle, char *description)
     return success;
 }
 
+OpenGL3_Texture *OpenGL3_GetTexture(IO *io, TextureID texture_id)
+{
+    OpenGL3_Data *bd = OpenGL3_GetBackendData(io);
+    ASSERT(texture_id >= 0 && texture_id < TextureID_Count);
+    OpenGL3_Texture *result = bd->textures + texture_id;
+    return result;
+}
+
 bool OpenGL3_CreateTextures(IO *io)
 {
-    
+    for(int texture_id = 0; texture_id < TextureID_Count; ++texture_id)
+    {
+        Texture *texture = GetTexture(io, texture_id);
+        
+        unsigned char *data = texture->data;
+        int channels = texture->channels;
+        int tile_width = texture->tile_width;
+        int tile_height = texture->tile_height;
+        int tile_count_x = texture->tile_count_x;
+        int tile_count_y = texture->tile_count_y;
+        int tile_count = texture->tile_count;
+        
+        GLint format = (channels == 3 ? GL_RGB :
+                        channels == 4 ? GL_RGBA : 0);
+        if(format == 0)
+        {
+            fprintf(stderr,
+                    "ERROR: OpenGL3_CreateTextures:\n"
+                    "Channel count (%d) not supported!\n",
+                    channels);
+            continue;
+        }
+        
+        unsigned int gl_texture_id;
+        glGenTextures(1, &gl_texture_id);
+        glBindTexture(GL_TEXTURE_2D_ARRAY, texture_id);
+        
+        float texture_border_color[] = { 1.0f, 0.0f, 1.0f, 1.0f };
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameterfv(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_BORDER_COLOR, texture_border_color);
+        
+        ASSERT(tile_width > 0 && tile_height > 0 && tile_count > 0);
+        glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, format, tile_width, tile_height,
+                     tile_count, 0, (GLenum)format, GL_UNSIGNED_BYTE, 0);
+        
+        // TODO(sokus): Use scratch arena instead, this allows for
+        // tile no bigger than 32x32 pixels.
+        unsigned char tile_buffer[32*32*4];
+        
+        int tile_w_stride = channels * tile_width;
+        int row_stride = tile_w_stride * tile_count_x;
+        for(int tile_y_idx = 0; tile_y_idx < tile_count_y; ++tile_y_idx)
+        {
+            for(int tile_x_idx = 0; tile_x_idx < tile_count_x; ++tile_x_idx)
+            {
+                int offset = tile_y_idx * row_stride * tile_height + tile_x_idx * tile_w_stride;
+                unsigned char *tile_corner_ptr = data + offset;
+                
+                for(int tile_pixel_y = 0; tile_pixel_y < tile_height; ++tile_pixel_y)
+                {
+                    unsigned char *src = tile_corner_ptr + tile_pixel_y * row_stride;
+                    int inverse_tile_pixeL_y = (tile_height - tile_pixel_y - 1);
+                    unsigned char *dst = tile_buffer + inverse_tile_pixeL_y * tile_w_stride;
+                    MEMORY_COPY(dst, src, (unsigned int)(tile_w_stride));
+                }
+                
+                int layer_idx = tile_y_idx * tile_count_x + tile_x_idx;
+                
+                glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, layer_idx,
+                                tile_width, tile_height, 1, (GLenum)format,
+                                GL_UNSIGNED_BYTE, tile_buffer);
+            }
+        }
+        
+        OpenGL3_Texture *gl_texture = OpenGL3_GetTexture(io, texture_id);
+        gl_texture->is_loaded = true;
+        gl_texture->id = gl_texture_id;
+        gl_texture->texture = texture;
+    }
 }
 
 bool OpenGL3_DestroyTextures(IO *io)
 {
-    
+    for(int texture_id = 0; texture_id < TextureID_Count; ++texture_id)
+    {
+        OpenGL3_Texture *gl_texture= OpenGL3_GetTexture(io, texture_id);
+        glDeleteTextures(1, &gl_texture->id);
+        gl_texture->is_loaded = false;
+        gl_texture->id = 0;
+        gl_texture->texture = 0;
+    }
 }
 
 bool OpenGL3_CreateDeviceObjects(IO *io)
@@ -159,6 +246,8 @@ bool OpenGL3_CreateDeviceObjects(IO *io)
     glEnableVertexAttribArray(1);
     
     glBindVertexArray(0);
+    
+    OpenGL3_CreateTextures(io);
     
     return true;
 }
@@ -269,7 +358,7 @@ void Foo()
     
     // TODO(sokus): Push tile data into a bigger chunk of
     // memory to allow tiles larger than 32x32
-    unsigned char tile_buffer[MAX_TILE_SIZE*MAX_TILE_SIZE*4];
+    unsigned char tile_buffr[MAX_TILE_SIZE*MAX_TILE_SIZE*4];
     ASSERT(tile_w > 0 && tile_h > 0 && tile_w <= MAX_TILE_SIZE && tile_h <= MAX_TILE_SIZE);
     
     for(int iy = 0; iy < tiles_y; ++iy)

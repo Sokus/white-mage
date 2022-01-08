@@ -81,6 +81,13 @@ void UnloadTexture(Texture *texture)
     texture->is_loaded = false;
 }
 
+Texture *GetTexture(IO *io, TextureID texture_id)
+{
+    ASSERT(texture_id >= 0 && texture_id < TextureID_Count);
+    Texture *result = (io->textures + TextureID_Count);
+    return result;
+}
+
 int main(void)
 {
     App app = {0};
@@ -118,6 +125,13 @@ int main(void)
     float target_frames_per_seconds = 60.0f;
     app.io.target_frames_per_second = target_frames_per_seconds;
     app.io.delta_time = 1.0f / target_frames_per_seconds;
+    
+    LoadTextureAtlas(GetTexture(&app.io, TextureID_Sprites),
+                     "../assets/sprites.png",
+                     8, 8, 3);
+    LoadTextureAtlas(GetTexture(&app.io, TextureID_Glyphs),
+                     "../assets/glyphs.pmg",
+                     8, 8, 4);
     
     SDL2_Init(&app.io, &memory_arena, window);
     OpenGL3_Init(&app.io, &memory_arena);
