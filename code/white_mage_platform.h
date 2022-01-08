@@ -44,6 +44,14 @@ typedef struct Input
     float keys_down_duration_previous[InputKey_Count];
 } Input;
 
+typedef enum TextureID
+{
+    TextureID_Sprites,
+    TextureID_Glyphs,
+    
+    TextureID_Count
+} TextureID;
+
 typedef enum SpriteID
 {
     SpriteID_PlayerRed    = 0,
@@ -80,17 +88,19 @@ typedef enum SpriteID
     SpriteID_Grave        = 13*16 + 4*3 + 2
 } SpriteID;
 
-typedef struct TextureAtlas
+typedef struct Texture
 {
-    unsigned int texture_id;
+    bool is_loaded;
+    void *data;
+    
     int width;
     int height;
     int channels;
-    int tile_w;
-    int tile_h;
-    int tiles_x;
-    int tiles_y;
+    int tile_width;
+    int tile_height;
+    int tile_count_x;
+    int tile_count_y;
     int tile_count;
-} TextureAtlas;
+} Texture;
 
 #endif //WHITE_MAGE_PLATFORM_H

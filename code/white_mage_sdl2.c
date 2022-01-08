@@ -6,9 +6,9 @@ typedef struct SDL2_Data
     
 } SDL2_Data;
 
-SDL2_Data *SDL2_GetBackendData(AppIO *io)
+SDL2_Data *SDL2_GetBackendData(IO *io)
 {
-    return (SDL2_Data *)io->backend_platform_data;
+    return (SDL2_Data *)io->platform_backend_data;
 }
 
 void SDL2_ProcessEvent(App *app, SDL_Event *event)
@@ -73,29 +73,29 @@ case keycode: { app->input.keys_down[(input_key)] = is_down; } break
     }
 }
 
-bool SDL2_Init(AppIO *io, MemoryArena *memory_arena, SDL_Window *window)
+bool SDL2_Init(IO *io, MemoryArena *memory_arena, SDL_Window *window)
 {
-    ASSERT(io->backend_platform_data = 0);
+    ASSERT(io->platform_backend_data = 0);
     
     SDL2_Data *bd = PUSH_STRUCT(memory_arena, SDL2_Data);
-    io->backend_platform_name = "SDL2";
-    io->backend_platform_data = (void *)bd;
+    io->platform_backend_name = "SDL2";
+    io->platform_backend_data = (void *)bd;
     
     bd->window = window;
     
     return true;
 }
 
-void SDL2_Shutdown(AppIO *io)
+void SDL2_Shutdown(IO *io)
 {
     SDL2_Data *bd = SDL2_GetBackendData(io);
     ASSERT(bd != 0);
     
-    io->backend_platform_name = 0;
-    io->backend_platform_data = 0;
+    io->platform_backend_name = 0;
+    io->platform_backend_data = 0;
 }
 
-void SDL2_NewFrame(AppIO *io)
+void SDL2_NewFrame(IO *io)
 {
     SDL2_Data *bd = SDL2_GetBackendData(io);
     ASSERT(bd != 0);
@@ -106,4 +106,11 @@ void SDL2_NewFrame(AppIO *io)
     io->screen_height = screen_height;
     
     // Update Input
+}
+
+float SDL2_GetSecondsElapsed(unsigned long int start_counter, unsigned long int end_counter)
+{
+    unsigned long int counter_elapsed = end_counter - start_counter;
+    float result = (float)counter_elapsed / (float)SDL_GetPerformanceFrequency();
+    return result;
 }

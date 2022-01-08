@@ -3,7 +3,7 @@
 #ifndef LINUX_PLATFORM_H
 #define LINUX_PLATFORM_H
 
-typedef struct AppIO
+typedef struct IO
 {
     float target_frames_per_second;
     float delta_time;
@@ -11,19 +11,20 @@ typedef struct AppIO
     int screen_width;
     int screen_height;
     
-    char *backend_platform_name;
-    char *backend_renderer_name;
-    void *backend_platform_data;
-    void *backend_renderer_data;
+    char *platform_backend_name;
+    char *renderer_backend_name;
+    void *platform_backend_data;
+    void *renderer_backend_data;
     
-} AppIO;
+    Texture textures[TextureID_Count];
+} IO;
 
 typedef struct App
 {
     bool is_running;
     bool fullscreen;
     
-    AppIO io;
+    IO io;
 } App;
 
 

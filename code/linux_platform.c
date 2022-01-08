@@ -25,11 +25,60 @@
 #include "white_mage_sdl2.c"
 #include "white_mage_opengl3.c"
 
-float SDLGetSecondsElapsed(unsigned long int start_counter, unsigned long int end_counter)
+bool LoadTextureAtlas(Texture *texture, char *path,
+                      int tile_w, int tile_h, int channels)
 {
-    unsigned long int counter_elapsed = end_counter - start_counter;
-    float result = (float)counter_elapsed / (float)SDL_GetPerformanceFrequency();
-    return result;
+    int width;
+    int height;
+    int source_channels;
+    unsigned char *data = stbi_load(path, &width, &height, &source_channels, channels);
+    
+    if(data)
+    {
+        int tiles_x = width / tile_w;
+        int tiles_y = height / tile_h;
+        int tile_count = tiles_x * tiles_y;
+        
+        if(width % tile_w != 0 || height % tile_h != 0)
+        {
+            fprintf(stderr,
+                    "WARNING: %s\n"
+                    "Texture size not a multiple of tile width/height!\n"
+                    "Texture size: %dx%d, Tile size: %dx%d\n",
+                    path, width, height, tile_w, tile_h);
+        }
+        
+        if(channels != 0 && source_channels != channels)
+        {
+            fprintf(stderr,
+                    "WARNING: %s\n"
+                    "Texture conversion from %d to %d channels!\n",
+                    path, source_channels, channels);
+        }
+        
+        texture->is_loaded = true;
+        texture->data = data;
+        texture->width = width;
+        texture->height = height;
+        texture->channels = channels;
+        texture->tile_w = tile_w;
+        texture->tile_h = tile_h;
+        texture->tile_count = tile_count;
+    }
+    else
+    {
+        fprintf(stderr, "ERROR: Could not load texture: %s\n", path);
+        texture->is_loaded = false;
+        return false;
+    }
+    
+    return true;
+}
+
+void UnloadTexture(Texture *texture)
+{
+    stbi_image_free(texture->data);
+    texture->is_loaded = false;
 }
 
 int main(void)
@@ -91,7 +140,7 @@ int main(void)
         
         // Timing
         unsigned long int work_counter = SDL_GetPerformanceCounter();
-        float work_in_seconds = SDLGetSecondsElapsed(last_counter, work_counter);
+        float work_in_seconds = SDL2_GetSecondsElapsed(last_counter, work_counter);
         
         if(work_in_seconds < app.io.delta_time)
         {
