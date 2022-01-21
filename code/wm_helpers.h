@@ -57,22 +57,37 @@ typedef struct MemoryArena
     size_t used;
 } MemoryArena;
 
-internal void InitializeArena(MemoryArena *arena, uint8_t *base, size_t size)
+void InitializeArena(MemoryArena *arena, uint8_t *base, size_t size)
 {
     arena->base = base;
     arena->size = size;
     arena->used = 0;
 }
 
+void ClearArena(MemoryArena *arena)
+{
+    arena->used = 0;
+}
+
 #define PUSH_STRUCT(arena, type) (type *)MemoryArenaPushSize(arena, sizeof(type))
 #define PUSH_ARRAY(arena, type, count) (type *)MemoryArenaPushSize(arena, (count)*sizeof(type)) 
 
+bool MemoryArenaCanFit(MemoryArena *arena, size_t size)
+{
+    bool result = ((arena->used + size) <= arena->size);
+    return result;
+}
+
 void *MemoryArenaPushSize(MemoryArena *arena, size_t size)
 {
-    ASSERT((arena->used + size) <= arena->size);
-    void *result = arena->base + arena->used;
-    arena->used += size;
-    
+    void *result = 0;
+    bool can_fit = MemoryArenaCanFit(arena, size);
+    ASSERT(can_fit);
+    if(can_fit)
+    {
+        result = arena->base + arena->used;
+        arena->used += size;
+    }
     return result;
 }
 
@@ -85,6 +100,7 @@ void *MemoryArenaPopSize(MemoryArena *arena, size_t size)
     void *result = arena->base + new_used;
     return result;
 }
+
 
 //~NOTE(sokus): Singly Linked Lists
 
