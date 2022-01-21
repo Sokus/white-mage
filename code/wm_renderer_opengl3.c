@@ -271,7 +271,7 @@ void OpenGL3_DestroyDeviceObjects(IO *io)
     if(bd->shader_handle)
     {
         glDeleteProgram(bd->shader_handle);
-        bd->shader_handle = 0;
+        2bd->shader_handle = 0;
     }
 }
 
@@ -338,53 +338,6 @@ void OpenGL3_SetupRenderState(IO *io, int width, int height)
 }
 
 #if 0
-void Foo()
-{
-    ASSERT(channels >= 3 && channels <= 4);
-    GLint format = (channels == 3 ? GL_RGB :
-                    channels == 4 ? GL_RGBA : GL_RGBA);
-    
-    unsigned int texture_id;
-    glGenTextures(1, &texture_id);
-    glBindTexture(GL_TEXTURE_2D_ARRAY, texture_id);
-    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-    float texture_border_color[] = { 1.0f, 0.0f, 1.0f, 1.0f };
-    glTexParameterfv(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_BORDER_COLOR, texture_border_color);
-    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, format, tile_w, tile_h, tile_count, 0,
-                 (GLenum)format, GL_UNSIGNED_BYTE, 0);
-    
-    // TODO(sokus): Push tile data into a bigger chunk of
-    // memory to allow tiles larger than 32x32
-    unsigned char tile_buffr[MAX_TILE_SIZE*MAX_TILE_SIZE*4];
-    ASSERT(tile_w > 0 && tile_h > 0 && tile_w <= MAX_TILE_SIZE && tile_h <= MAX_TILE_SIZE);
-    
-    for(int iy = 0; iy < tiles_y; ++iy)
-    {
-        for(int ix = 0; ix < tiles_x; ++ix)
-        {
-            int offset = iy * row_stride * tile_h + ix * tile_stride;
-            unsigned char *tile_corner_ptr = data + offset;
-            
-            for(int tex_y = 0; tex_y < tile_h; ++tex_y)
-            {
-                unsigned char *src = tile_corner_ptr + tex_y * row_stride;
-                unsigned char *dst = tile_buffer + (tile_h - tex_y - 1) * tile_w * channels;
-                MEMORY_COPY(dst, src, (unsigned int)(tile_w * channels));
-            }
-            
-            int layer_idx = iy * tiles_x + ix;
-            
-            glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0,
-                            layer_idx, tile_w, tile_h, 1, (GLenum)format,
-                            GL_UNSIGNED_BYTE, tile_buffer);
-        }
-    }
-    
-    return result;
-}
 
 void RenderSprite(GLState *gl_state, vec2 position, int sprite_id, bool flip)
 {

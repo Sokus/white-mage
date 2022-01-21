@@ -1,7 +1,7 @@
 /* date = December 21st 2021 8:10 pm */
 
-#ifndef BASE_H
-#define BASE_H
+#ifndef WM_HELPERS
+#define WM_HELPERS
 
 // common includes
 #include <string.h>  // memcpy. memset
@@ -167,4 +167,4 @@ unsigned int StringLength(char *str)
 }
 
 
-#endif //BASE_H
+#endif //WM_HELPERS

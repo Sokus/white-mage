@@ -1,7 +1,7 @@
 /* date = December 22nd 2021 2:33 pm */
 
-#ifndef WHITE_MAGE_PLATFORM_H
-#define WHITE_MAGE_PLATFORM_H
+#ifndef WM_PLATFORM_H
+#define WM_PLATFORM_H
 
 typedef enum InputKey
 {
@@ -108,4 +108,4 @@ typedef struct Command
     
 }
 
-#endif //WHITE_MAGE_PLATFORM_H
+#endif //WM_PLATFORM_H

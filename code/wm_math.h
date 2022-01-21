@@ -1,7 +1,7 @@
 /* date = December 25th 2021 6:11 pm */
 
-#ifndef WHITE_MAGE_MATH_H
-#define WHITE_MAGE_MATH_H
+#ifndef WM_MATH_H
+#define WM_MATH_H
 
 #include "math.h"    // sinf, cosf ...
 #include "stdbool.h" // comparisons
@@ -805,4 +805,4 @@ mat4 LookAt(vec3 eye, vec3 center, vec3 up)
     return result;
 }
 
-#endif //WHITE_MAGE_MATH_H
+#endif //WM_MATH_H

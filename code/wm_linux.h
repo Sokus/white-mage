@@ -1,7 +1,7 @@
 /* date = December 30th 2021 4:52 pm */
 
-#ifndef LINUX_PLATFORM_H
-#define LINUX_PLATFORM_H
+#ifndef WM_LINUX_H
+#define WM_LINUX_H
 
 typedef struct IO
 {
@@ -29,4 +29,4 @@ typedef struct App
 
 
 
-#endif //LINUX_PLATFORM_H
+#endif //WM_LINUX_H

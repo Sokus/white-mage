@@ -1,7 +1,7 @@
 // Platform independent
 #include "base.h"    
-#include "white_mage_platform.h"       // platform-game communication
-#include "white_mage_math.h"
+#include "wm_platform.h"       // platform-game communication
+#include "wm_math.h"
 
 // External
 #include "SDL2/SDL.h"            // window/context creation
@@ -19,11 +19,11 @@
 // Platform specific/temporary
 #include <stdio.h>
 
-#include "linux_platform.h"            // core functionality/helpers
+#include "wm_linux.h"
 
-#include "white_mage.c"
-#include "white_mage_sdl2.c"
-#include "white_mage_opengl3.c"
+#include "wm_game.c"
+#include "wm_platform_sdl2.c"
+#include "wm_renderer_opengl3.c"
 
 bool LoadTextureAtlas(Texture *texture, char *path,
                       int tile_w, int tile_h, int channels)
@@ -126,12 +126,13 @@ int main(void)
     app.io.target_frames_per_second = target_frames_per_seconds;
     app.io.delta_time = 1.0f / target_frames_per_seconds;
     
-    LoadTextureAtlas(GetTexture(&app.io, TextureID_Sprites),
-                     "../assets/sprites.png",
-                     8, 8, 3);
-    LoadTextureAtlas(GetTexture(&app.io, TextureID_Glyphs),
-                     "../assets/glyphs.pmg",
-                     8, 8, 4);
+    {
+        Texture *sprites_texture = GetTexture(&app.io, TextureID_Sprites);
+        LoadTextureAtlas(sprites_texture, "../assets/sprites.png", 8, 8, 3);
+        
+        Texture *glyphs_texture = GetTexture(&app.io, TextureID_Glyphs);
+        LoadTextureAtlas(sprites_texture, "../assets/glyphs.png", 8, 8, 4);
+    }
     
     SDL2_Init(&app.io, &memory_arena, window);
     OpenGL3_Init(&app.io, &memory_arena);
