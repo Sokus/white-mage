@@ -12,7 +12,7 @@ inc_dir="$location/external/include"
 lib_dir="$location/external/lib/linux"
 
 # Source files to compile
-platform_src="$location/code/linux_platform.c"
+platform_src="$location/code/wm_linux_main.c"
 glad_src="$location/external/src/glad/glad.c"
 sources="$platform_src $glad_src"
 

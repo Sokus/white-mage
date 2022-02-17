@@ -1,5 +1,5 @@
 // Platform independent
-#include "base.h"    
+#include "wm_helpers.h"    
 #include "wm_platform.h"       // platform-game communication
 #include "wm_math.h"
 
@@ -25,67 +25,26 @@
 #include "wm_platform_sdl2.c"
 #include "wm_renderer_opengl3.c"
 
-bool LoadTextureAtlas(Texture *texture, char *path,
-                      int tile_w, int tile_h, int channels)
+uint8_t *LoadTextureEx(char *path, int *width, int *height, int *channels, int opt_force_channels)
 {
-    int width;
-    int height;
-    int source_channels;
-    unsigned char *data = stbi_load(path, &width, &height, &source_channels, channels);
+    int src_channels = 0;
+    uint8_t *data = stbi_load(path, width, height, &src_channels, opt_force_channels);
     
     if(data)
     {
-        int tiles_x = width / tile_w;
-        int tiles_y = height / tile_h;
-        int tile_count = tiles_x * tiles_y;
-        
-        if(width % tile_w != 0 || height % tile_h != 0)
-        {
-            fprintf(stderr,
-                    "WARNING: %s\n"
-                    "Texture size not a multiple of tile width/height!\n"
-                    "Texture size: %dx%d, Tile size: %dx%d\n",
-                    path, width, height, tile_w, tile_h);
-        }
-        
-        if(channels != 0 && source_channels != channels)
-        {
-            fprintf(stderr,
-                    "WARNING: %s\n"
-                    "Texture conversion from %d to %d channels!\n",
-                    path, source_channels, channels);
-        }
-        
-        texture->is_loaded = true;
-        texture->data = data;
-        texture->width = width;
-        texture->height = height;
-        texture->channels = channels;
-        texture->tile_w = tile_w;
-        texture->tile_h = tile_h;
-        texture->tile_count = tile_count;
+        *channels = (opt_force_channels != 0 ? opt_force_channels : src_channels);
     }
     else
     {
         fprintf(stderr, "ERROR: Could not load texture: %s\n", path);
-        texture->is_loaded = false;
-        return false;
     }
     
-    return true;
+    return data;
 }
 
-void UnloadTexture(Texture *texture)
+void UnloadTexture(uint8_t *texture_data)
 {
-    stbi_image_free(texture->data);
-    texture->is_loaded = false;
-}
-
-Texture *GetTexture(IO *io, TextureID texture_id)
-{
-    ASSERT(texture_id >= 0 && texture_id < TextureID_Count);
-    Texture *result = (io->textures + TextureID_Count);
-    return result;
+    stbi_image_free(texture_data);
 }
 
 int main(void)
@@ -128,10 +87,10 @@ int main(void)
     
     {
         Texture *sprites_texture = GetTexture(&app.io, TextureID_Sprites);
-        LoadTextureAtlas(sprites_texture, "../assets/sprites.png", 8, 8, 3);
+        LoadTexture(sprites_texture, "../assets/sprites.png", 3, 8, 8);
         
         Texture *glyphs_texture = GetTexture(&app.io, TextureID_Glyphs);
-        LoadTextureAtlas(sprites_texture, "../assets/glyphs.png", 8, 8, 4);
+        LoadTexture(sprites_texture, "../assets/glyphs.png", 4, 8, 8);
     }
     
     SDL2_Init(&app.io, &memory_arena, window);

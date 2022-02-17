@@ -1,15 +1,7 @@
 typedef struct SDL2_Data
 {
     SDL_Window *window;
-    unsigned int time;
-    
-    
 } SDL2_Data;
-
-SDL2_Data *SDL2_GetBackendData(IO *io)
-{
-    return (SDL2_Data *)io->platform_backend_data;
-}
 
 void SDL2_ProcessEvent(App *app, SDL_Event *event)
 {

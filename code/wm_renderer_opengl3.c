@@ -2,14 +2,23 @@ typedef struct OpenGL3_Texture
 {
     bool is_loaded;
     GLuint id;
-    Texture *texture;
+    
+    uint8_t *data;
+    int width;
+    int height;
+    int channels;
+    int tile_width;
+    int tile_height;
+    int tile_count_x;
+    int tile_count_y;
+    int tile_count;
 } OpenGL3_Texture;
 
 typedef struct OpenGL3_Data
 {
     char *vendor;
-    char *renderer;
     char *version;
+    char *renderer;
     
     unsigned int shader_handle;
     unsigned int vao_handle;
@@ -18,22 +27,11 @@ typedef struct OpenGL3_Data
     OpenGL3_Texture textures[TextureID_Count];
 } OpenGL3_Data;
 
-OpenGL3_Data *OpenGL3_GetBackendData(IO *io)
+bool OpenGL3_Init(OpenGL3_Data *state)
 {
-    return (OpenGL3_Data *)io->renderer_backend_data;
-}
-
-bool OpenGL3_Init(IO *io, MemoryArena *memory_arena)
-{
-    ASSERT(io->renderer_backend_data == NULL);
-    
-    OpenGL3_Data *bd = PUSH_STRUCT(memory_arena, OpenGL3_Data);
-    io->renderer_backend_name = "OpenGL3";
-    io->renderer_backend_data = (void *)bd;
-    
-    bd->vendor = (char *)glGetString(GL_VENDOR);
-    bd->renderer = (char *)glGetString(GL_RENDERER);
-    bd->version = (char *)glGetString(GL_VERSION);
+    state->vendor = (char *)glGetString(GL_VENDOR);
+    state->renderer = (char *)glGetString(GL_RENDERER);
+    state->version = (char *)glGetString(GL_VERSION);
     
     return true;
 }
@@ -70,88 +68,108 @@ bool CheckProgram(GLuint handle, char *description)
     return success;
 }
 
-OpenGL3_Texture *OpenGL3_GetTexture(IO *io, TextureID texture_id)
+bool OpenGL3_CreateTexture(OpenGL3_Texture *texture,
+                           MemoryArena *scratch_arena,
+                           uint8_t *data, int width, int height,
+                           int channels, int opt_tile_width, int opt_tile_height)
 {
-    OpenGL3_Data *bd = OpenGL3_GetBackendData(io);
-    ASSERT(texture_id >= 0 && texture_id < TextureID_Count);
-    OpenGL3_Texture *result = bd->textures + texture_id;
-    return result;
-}
-
-bool OpenGL3_CreateTextures(IO *io)
-{
-    for(int texture_id = 0; texture_id < TextureID_Count; ++texture_id)
+    if(texture->is_loaded)
     {
-        Texture *texture = GetTexture(io, texture_id);
-        
-        unsigned char *data = texture->data;
-        int channels = texture->channels;
-        int tile_width = texture->tile_width;
-        int tile_height = texture->tile_height;
-        int tile_count_x = texture->tile_count_x;
-        int tile_count_y = texture->tile_count_y;
-        int tile_count = texture->tile_count;
-        
-        GLint format = (channels == 3 ? GL_RGB :
-                        channels == 4 ? GL_RGBA : 0);
-        if(format == 0)
-        {
-            fprintf(stderr,
-                    "ERROR: OpenGL3_CreateTextures:\n"
-                    "Channel count (%d) not supported!\n",
-                    channels);
-            continue;
-        }
-        
-        unsigned int gl_texture_id;
-        glGenTextures(1, &gl_texture_id);
-        glBindTexture(GL_TEXTURE_2D_ARRAY, texture_id);
-        
-        float texture_border_color[] = { 1.0f, 0.0f, 1.0f, 1.0f };
-        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-        glTexParameterfv(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_BORDER_COLOR, texture_border_color);
-        
-        ASSERT(tile_width > 0 && tile_height > 0 && tile_count > 0);
-        glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, format, tile_width, tile_height,
-                     tile_count, 0, (GLenum)format, GL_UNSIGNED_BYTE, 0);
-        
-        // TODO(sokus): Use scratch arena instead, this allows for
-        // tile no bigger than 32x32 pixels.
-        unsigned char tile_buffer[32*32*4];
-        
-        int tile_w_stride = channels * tile_width;
-        int row_stride = tile_w_stride * tile_count_x;
-        for(int tile_y_idx = 0; tile_y_idx < tile_count_y; ++tile_y_idx)
-        {
-            for(int tile_x_idx = 0; tile_x_idx < tile_count_x; ++tile_x_idx)
-            {
-                int offset = tile_y_idx * row_stride * tile_height + tile_x_idx * tile_w_stride;
-                unsigned char *tile_corner_ptr = data + offset;
-                
-                for(int tile_pixel_y = 0; tile_pixel_y < tile_height; ++tile_pixel_y)
-                {
-                    unsigned char *src = tile_corner_ptr + tile_pixel_y * row_stride;
-                    int inverse_tile_pixeL_y = (tile_height - tile_pixel_y - 1);
-                    unsigned char *dst = tile_buffer + inverse_tile_pixeL_y * tile_w_stride;
-                    MEMORY_COPY(dst, src, (unsigned int)(tile_w_stride));
-                }
-                
-                int layer_idx = tile_y_idx * tile_count_x + tile_x_idx;
-                
-                glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, layer_idx,
-                                tile_width, tile_height, 1, (GLenum)format,
-                                GL_UNSIGNED_BYTE, tile_buffer);
-            }
-        }
-        
-        OpenGL3_Texture *gl_texture = OpenGL3_GetTexture(io, texture_id);
-        gl_texture->is_loaded = true;
-        gl_texture->id = gl_texture_id;
-        gl_texture->texture = texture;
+        fprintf(stderr, "ERROR: OpenGL3_Texture already loaded!\n");
+        return false;
     }
+    
+    int tile_width = (opt_tile_width > 0 ? opt_tile_width : width);
+    int tile_height = (opt_tile_height > 0 ? opt_tile_height : height);
+    int tiles_x = width / tile_width;
+    int tiles_y = height / tile_height;
+    int tile_count = tiles_x * tiles_y;
+    ASSERT(tile_width > 0 && tile_height > 0 && tile_count > 0);
+    
+    if(width % tile_width != 0)
+    {
+        fprintf(stderr,
+                "ERROR: Texture width (%d) not divisible by tile width (%d)!\n",
+                width, tile_width);
+        return false;
+    }
+    
+    if(height % tile_height != 0)
+    {
+        fprintf(stderr,
+                "ERROR: Texture height (%d) not divisible by tile height (%d)!\n",
+                height, tile_height);
+        return false;
+    }
+    
+    GLint format = (channels == 3 ? GL_RGB :
+                    channels == 4 ? GL_RGBA : 0);
+    
+    if(format == 0)
+    {
+        fprintf(stderr, "ERROR: Channel count (%d) not supported!\n", channels);
+        return false;
+    }
+    
+    int size_needed = tile_width * tile_height * channels;
+    int size_available = scratch_arena->size - scratch_arena->used;
+    
+    if(size_needed > size_available)
+    {
+        fprintf(stderr,
+                "ERROR: Not enough space for texture tile in temporary arena.\n"
+                "  Available: %d  Needed: %d\n",
+                size_available, size_needed);
+        return false;
+    }
+    
+    uint8_t *tile_buffer = (uint8_t *)MemoryArenaPushSize(scratch_arena, size_needed);
+    
+    unsigned int gl_texture_id;
+    glGenTextures(1, &gl_texture_id);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, texture_id);
+    
+    float texture_border_color[] = { 1.0f, 0.0f, 1.0f, 1.0f };
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameterfv(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_BORDER_COLOR, texture_border_color);
+    
+    glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, format, tile_width, tile_height,
+                 tile_count, 0, (GLenum)format, GL_UNSIGNED_BYTE, 0);
+    
+    int tile_w_stride = channels * tile_width;
+    int row_stride = tile_w_stride * tile_count_x;
+    for(int tile_y_idx = 0; tile_y_idx < tile_count_y; ++tile_y_idx)
+    {
+        for(int tile_x_idx = 0; tile_x_idx < tile_count_x; ++tile_x_idx)
+        {
+            int offset = tile_y_idx * row_stride * tile_height + tile_x_idx * tile_w_stride;
+            unsigned char *tile_corner_ptr = data + offset;
+            
+            for(int tile_pixel_y = 0; tile_pixel_y < tile_height; ++tile_pixel_y)
+            {
+                unsigned char *src = tile_corner_ptr + tile_pixel_y * row_stride;
+                int inverse_tile_pixeL_y = (tile_height - tile_pixel_y - 1);
+                unsigned char *dst = tile_buffer + inverse_tile_pixeL_y * tile_w_stride;
+                MEMORY_COPY(dst, src, (unsigned int)(tile_w_stride));
+            }
+            
+            int layer_idx = tile_y_idx * tile_count_x + tile_x_idx;
+            
+            glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, layer_idx,
+                            tile_width, tile_height, 1, (GLenum)format,
+                            GL_UNSIGNED_BYTE, tile_buffer);
+        }
+    }
+    
+    MemoryArenaPopSize(scratch_arena, size_needed);
+    
+    OpenGL3_Texture *gl_texture = OpenGL3_GetTexture(io, texture_id);
+    gl_texture->is_loaded = true;
+    gl_texture->id = gl_texture_id;
+    gl_texture->texture = texture;
 }
 
 bool OpenGL3_DestroyTextures(IO *io)

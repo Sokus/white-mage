@@ -11,12 +11,6 @@ typedef struct IO
     int screen_width;
     int screen_height;
     
-    char *platform_backend_name;
-    char *renderer_backend_name;
-    void *platform_backend_data;
-    void *renderer_backend_data;
-    
-    Texture textures[TextureID_Count];
 } IO;
 
 typedef struct App

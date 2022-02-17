@@ -88,24 +88,4 @@ typedef enum SpriteID
     SpriteID_Grave        = 13*16 + 4*3 + 2
 } SpriteID;
 
-typedef struct Texture
-{
-    bool is_loaded;
-    unsigned char *data;
-    
-    int width;
-    int height;
-    int channels;
-    int tile_width;
-    int tile_height;
-    int tile_count_x;
-    int tile_count_y;
-    int tile_count;
-} Texture;
-
-typedef struct Command
-{
-    
-}
-
 #endif //WM_PLATFORM_H

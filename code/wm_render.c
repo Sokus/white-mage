@@ -126,10 +126,10 @@ void RenderTriangle(RenderTaskList *render_task_list,
     }
 }
 
-void RenderRectangle2D(RenderTaskList *render_task_list,
-                       float x0, float y0,
-                       float x1, float y1,
-                       float r, float g, float b, float a)
+void RenderRectangle(RenderTaskList *render_task_list,
+                     float x0, float y0,
+                     float x1, float y1,
+                     float r, float g, float b, float a)
 {
     size_t vtx_count = 6;
     size_t vtx_size  = sizeof(VertexColored);
