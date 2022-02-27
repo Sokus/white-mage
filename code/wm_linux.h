@@ -10,7 +10,6 @@ typedef struct IO
     
     int screen_width;
     int screen_height;
-    
 } IO;
 
 typedef struct App
@@ -20,6 +19,20 @@ typedef struct App
     
     IO io;
 } App;
+
+typedef struct ReadFileResult
+{
+    void *data;
+    uint32_t size;
+} ReadFileResult;
+
+typedef struct Image
+{
+    uint8_t *data;
+    int width;
+    int height;
+    int channels;
+} Image;
 
 
 

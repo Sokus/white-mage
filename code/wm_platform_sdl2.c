@@ -65,35 +65,17 @@ case keycode: { app->input.keys_down[(input_key)] = is_down; } break
     }
 }
 
-bool SDL2_Init(IO *io, MemoryArena *memory_arena, SDL_Window *window)
+bool SDL2_Init(SDL2_Data *data, SDL_Window *window)
 {
-    ASSERT(io->platform_backend_data = 0);
-    
-    SDL2_Data *bd = PUSH_STRUCT(memory_arena, SDL2_Data);
-    io->platform_backend_name = "SDL2";
-    io->platform_backend_data = (void *)bd;
-    
-    bd->window = window;
+    data->window = window;
     
     return true;
 }
 
-void SDL2_Shutdown(IO *io)
+void SDL2_NewFrame(SDL2_Data *data, IO *io)
 {
-    SDL2_Data *bd = SDL2_GetBackendData(io);
-    ASSERT(bd != 0);
-    
-    io->platform_backend_name = 0;
-    io->platform_backend_data = 0;
-}
-
-void SDL2_NewFrame(IO *io)
-{
-    SDL2_Data *bd = SDL2_GetBackendData(io);
-    ASSERT(bd != 0);
-    
     int screen_width, screen_height;
-    SDL_GetWindowSize(bd->window, &screen_width, &screen_height);
+    SDL_GetWindowSize(data->window, &screen_width, &screen_height);
     io->screen_width = screen_width;
     io->screen_height = screen_height;
     

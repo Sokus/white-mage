@@ -3,7 +3,6 @@ typedef struct OpenGL3_Texture
     bool is_loaded;
     GLuint id;
     
-    uint8_t *data;
     int width;
     int height;
     int channels;
@@ -68,16 +67,29 @@ bool CheckProgram(GLuint handle, char *description)
     return success;
 }
 
+
+OpenGL3_Texture *OpenGL3_GetTexture(OpenGL3_Data *opengl3_data, int texture_id)
+{
+    ASSERT(texture_id > 0 && texture_id < (int)ARRAY_SIZE(opengl3_data->textures));
+    OpenGL3_Texture *result = opengl3_data->textures + texture_id;
+    return result;
+}
+
 bool OpenGL3_CreateTexture(OpenGL3_Texture *texture,
                            MemoryArena *scratch_arena,
-                           uint8_t *data, int width, int height,
-                           int channels, int opt_tile_width, int opt_tile_height)
+                           Image *image,
+                           int opt_tile_width, int opt_tile_height)
 {
     if(texture->is_loaded)
     {
         fprintf(stderr, "ERROR: OpenGL3_Texture already loaded!\n");
         return false;
     }
+    
+    uint8_t *data = image->data;
+    int width = image->width;
+    int height = image->height;
+    int channels = image->channels;
     
     int tile_width = (opt_tile_width > 0 ? opt_tile_width : width);
     int tile_height = (opt_tile_height > 0 ? opt_tile_height : height);
@@ -111,15 +123,15 @@ bool OpenGL3_CreateTexture(OpenGL3_Texture *texture,
         return false;
     }
     
-    int size_needed = tile_width * tile_height * channels;
-    int size_available = scratch_arena->size - scratch_arena->used;
+    size_t size_needed = (size_t)(tile_width * tile_height * channels);
+    size_t size_available = scratch_arena->size - scratch_arena->used;
     
     if(size_needed > size_available)
     {
         fprintf(stderr,
                 "ERROR: Not enough space for texture tile in temporary arena.\n"
-                "  Available: %d  Needed: %d\n",
-                size_available, size_needed);
+                "  Available: %u  Needed: %u\n",
+                (unsigned int)size_available, (unsigned int)size_needed);
         return false;
     }
     
@@ -127,7 +139,7 @@ bool OpenGL3_CreateTexture(OpenGL3_Texture *texture,
     
     unsigned int gl_texture_id;
     glGenTextures(1, &gl_texture_id);
-    glBindTexture(GL_TEXTURE_2D_ARRAY, texture_id);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, gl_texture_id);
     
     float texture_border_color[] = { 1.0f, 0.0f, 1.0f, 1.0f };
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
@@ -140,10 +152,10 @@ bool OpenGL3_CreateTexture(OpenGL3_Texture *texture,
                  tile_count, 0, (GLenum)format, GL_UNSIGNED_BYTE, 0);
     
     int tile_w_stride = channels * tile_width;
-    int row_stride = tile_w_stride * tile_count_x;
-    for(int tile_y_idx = 0; tile_y_idx < tile_count_y; ++tile_y_idx)
+    int row_stride = tile_w_stride * tiles_x;
+    for(int tile_y_idx = 0; tile_y_idx < tiles_y; ++tile_y_idx)
     {
-        for(int tile_x_idx = 0; tile_x_idx < tile_count_x; ++tile_x_idx)
+        for(int tile_x_idx = 0; tile_x_idx < tiles_x; ++tile_x_idx)
         {
             int offset = tile_y_idx * row_stride * tile_height + tile_x_idx * tile_w_stride;
             unsigned char *tile_corner_ptr = data + offset;
@@ -156,7 +168,7 @@ bool OpenGL3_CreateTexture(OpenGL3_Texture *texture,
                 MEMORY_COPY(dst, src, (unsigned int)(tile_w_stride));
             }
             
-            int layer_idx = tile_y_idx * tile_count_x + tile_x_idx;
+            int layer_idx = tile_y_idx * tiles_x + tile_x_idx;
             
             glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, layer_idx,
                             tile_width, tile_height, 1, (GLenum)format,
@@ -166,28 +178,31 @@ bool OpenGL3_CreateTexture(OpenGL3_Texture *texture,
     
     MemoryArenaPopSize(scratch_arena, size_needed);
     
-    OpenGL3_Texture *gl_texture = OpenGL3_GetTexture(io, texture_id);
-    gl_texture->is_loaded = true;
-    gl_texture->id = gl_texture_id;
-    gl_texture->texture = texture;
+    texture->is_loaded = true;
+    texture->id = gl_texture_id;
+    texture->width = width;
+    texture->height = height;
+    texture->channels = channels;
+    texture->tile_width = tile_width;
+    texture->tile_height = tile_height;
+    texture->tile_count_x = tiles_x;
+    texture->tile_count_y = tiles_y;
+    texture->tile_count = tile_count;
+    
+    return true;
 }
 
-bool OpenGL3_DestroyTextures(IO *io)
+void OpenGL3_DestroyTextures(OpenGL3_Data *data)
 {
     for(int texture_id = 0; texture_id < TextureID_Count; ++texture_id)
     {
-        OpenGL3_Texture *gl_texture= OpenGL3_GetTexture(io, texture_id);
-        glDeleteTextures(1, &gl_texture->id);
-        gl_texture->is_loaded = false;
-        gl_texture->id = 0;
-        gl_texture->texture = 0;
+        OpenGL3_Texture *texture = data->textures + texture_id;
+        glDeleteTextures(1, &texture->id);
     }
 }
 
-bool OpenGL3_CreateDeviceObjects(IO *io)
+bool OpenGL3_CreateDeviceObjects(OpenGL3_Data *data)
 {
-    OpenGL3_Data *bd = OpenGL3_GetBackendData(io);
-    
     const GLchar *vertex_shader = 
         "#version 420 core\n"
         "layout (location = 0) in vec2 a_pos;\n"
@@ -228,22 +243,22 @@ bool OpenGL3_CreateDeviceObjects(IO *io)
     glCompileShader(fragment_shader_handle);
     CheckShader(fragment_shader_handle, "fragment shader");
     
-    bd->shader_handle = glCreateProgram();
-    glAttachShader(bd->shader_handle, vertex_shader_handle);
-    glAttachShader(bd->shader_handle, fragment_shader_handle);
-    glLinkProgram(bd->shader_handle);
-    CheckProgram(bd->shader_handle, "shader program");
+    data->shader_handle = glCreateProgram();
+    glAttachShader(data->shader_handle, vertex_shader_handle);
+    glAttachShader(data->shader_handle, fragment_shader_handle);
+    glLinkProgram(data->shader_handle);
+    CheckProgram(data->shader_handle, "shader program");
     
-    glDetachShader(bd->shader_handle, vertex_shader_handle);
-    glDetachShader(bd->shader_handle, fragment_shader_handle);
+    glDetachShader(data->shader_handle, vertex_shader_handle);
+    glDetachShader(data->shader_handle, fragment_shader_handle);
     glDeleteShader(vertex_shader_handle);
     glDeleteShader(fragment_shader_handle);
     
-    glGenVertexArrays(1, &bd->vao_handle);
-    glGenBuffers(1, &bd->vbo_handle);
+    glGenVertexArrays(1, &data->vao_handle);
+    glGenBuffers(1, &data->vbo_handle);
     
-    glBindVertexArray(bd->vao_handle);
-    glBindBuffer(GL_ARRAY_BUFFER, bd->vbo_handle);
+    glBindVertexArray(data->vao_handle);
+    glBindBuffer(GL_ARRAY_BUFFER, data->vbo_handle);
     
     float quad_vertices[] =
     {
@@ -265,39 +280,34 @@ bool OpenGL3_CreateDeviceObjects(IO *io)
     
     glBindVertexArray(0);
     
-    OpenGL3_CreateTextures(io);
-    
     return true;
 }
 
-void OpenGL3_DestroyDeviceObjects(IO *io)
+void OpenGL3_DestroyDeviceObjects(OpenGL3_Data *data)
 {
-    OpenGL3_Data *bd = OpenGL3_GetBackendData(io);
-    
-    if(bd->vao_handle)
+    if(data->vao_handle)
     {
-        glDeleteBuffers(1, &bd->vao_handle);
-        bd->vao_handle = 0;
+        glDeleteBuffers(1, &data->vao_handle);
+        data->vao_handle = 0;
     }
     
-    if(bd->vbo_handle)
+    if(data->vbo_handle)
     {
-        glDeleteBuffers(1, &bd->vbo_handle);
-        bd->vbo_handle = 0;
+        glDeleteBuffers(1, &data->vbo_handle);
+        data->vbo_handle = 0;
     }
     
-    if(bd->shader_handle)
+    if(data->shader_handle)
     {
-        glDeleteProgram(bd->shader_handle);
-        2bd->shader_handle = 0;
+        glDeleteProgram(data->shader_handle);
+        data->shader_handle = 0;
     }
 }
 
-void OpenGL3_NewFrame(IO *io)
+void OpenGL3_NewFrame(OpenGL3_Data *data)
 {
-    OpenGL3_Data *bd = OpenGL3_GetBackendData(io);
-    if(bd->shader_handle == 0)
-        OpenGL3_CreateDeviceObjects(io);
+    if(data->shader_handle == 0)
+        OpenGL3_CreateDeviceObjects(data);
 }
 
 void SetBoolUniform(unsigned int program, char *name, bool value)
@@ -324,20 +334,13 @@ void SetMat4Uniform(unsigned int program, char *name, mat4 *matrix)
     glUniformMatrix4fv(uniform_location, 1, GL_FALSE, &matrix->elements[0][0]);
 }
 
-void OpenGL3_Shutdown(IO *io)
+void OpenGL3_Shutdown(OpenGL3_Data *data)
 {
-    OpenGL3_Data *bd = OpenGL3_GetBackendData(io);
-    ASSERT(bd != 0);
-    
-    OpenGL3_DestroyDeviceObjects(io);
-    io->renderer_backend_name = 0;
-    io->renderer_backend_data = 0;
+    OpenGL3_DestroyDeviceObjects(data);
 }
 
-void OpenGL3_SetupRenderState(IO *io, int width, int height)
+void OpenGL3_SetupRenderState(OpenGL3_Data *data, int width, int height)
 {
-    OpenGL3_Data *bd = OpenGL3_GetBackendData(io);
-    
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);  
     
@@ -350,9 +353,9 @@ void OpenGL3_SetupRenderState(IO *io, int width, int height)
     mat4 orthographic = Orthographic(0.0f, (float)width,
                                      0.0f, (float)height,
                                      -1.0f, 1.0f);
-    glUseProgram(bd->shader_handle);
-    SetMat4Uniform(bd->shader_handle, "u_camera_to_clip", &orthographic);
-    glBindVertexArray(bd->vao_handle);
+    glUseProgram(data->shader_handle);
+    SetMat4Uniform(data->shader_handle, "u_camera_to_clip", &orthographic);
+    glBindVertexArray(data->vao_handle);
 }
 
 #if 0

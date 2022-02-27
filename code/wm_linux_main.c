@@ -19,37 +19,76 @@
 // Platform specific/temporary
 #include <stdio.h>
 
+#include <fcntl.h> // file control
+#include <errno.h>
+#include <string.h> // strerror
+#include <sys/stat.h>
+#include <unistd.h>
+
 #include "wm_linux.h"
 
 #include "wm_game.c"
 #include "wm_platform_sdl2.c"
 #include "wm_renderer_opengl3.c"
 
-uint8_t *LoadTextureEx(char *path, int *width, int *height, int *channels, int opt_force_channels)
+ReadFileResult Linux_ReadEntireFile(char *path)
 {
-    int src_channels = 0;
-    uint8_t *data = stbi_load(path, width, height, &src_channels, opt_force_channels);
+    ReadFileResult result = {0};
+    int fd = open(path, O_RDONLY);
+    
+    if(fd > 0)
+    {
+        struct stat file_stat;
+        fstat(fd, &file_stat);
+        uint32_t size = (uint32_t)file_stat.st_size; // NOTE(sokus): This limits our file size
+        void *data = valloc(size);
+        read(fd, data, size);
+        
+        result.data = data;
+        result.size = size;
+    }
+    else
+    {
+        fprintf(stderr, "ERROR: Could not read file %s: %s\n", path, strerror(errno));
+    }
+    
+    return result;
+}
+
+Image LoadImageEx(char *path, int opt_force_channels)
+{
+    Image result = {0};
+    
+    int width, height, channels, src_channels = 0;
+    uint8_t *data = stbi_load(path, &width, &height, &src_channels, opt_force_channels);
     
     if(data)
     {
-        *channels = (opt_force_channels != 0 ? opt_force_channels : src_channels);
+        channels = (opt_force_channels != 0 ? opt_force_channels : src_channels);
+        result.data = data;
+        result.width = width;
+        result.height = height;
+        result.channels = channels;
     }
     else
     {
         fprintf(stderr, "ERROR: Could not load texture: %s\n", path);
     }
     
-    return data;
+    return result;
 }
 
-void UnloadTexture(uint8_t *texture_data)
+void UnloadImage(Image *image)
 {
-    stbi_image_free(texture_data);
+    stbi_image_free(image->data);
+    MEMORY_SET(image, 0, sizeof(Image));
 }
 
 int main(void)
 {
     App app = {0};
+    SDL2_Data sdl2_data = {0};
+    OpenGL3_Data opengl3_data = {0};
     
     if(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0)
     {
@@ -86,22 +125,25 @@ int main(void)
     app.io.delta_time = 1.0f / target_frames_per_seconds;
     
     {
-        Texture *sprites_texture = GetTexture(&app.io, TextureID_Sprites);
-        LoadTexture(sprites_texture, "../assets/sprites.png", 3, 8, 8);
+        OpenGL3_Texture *texture;
+        texture = OpenGL3_GetTexture(&opengl3_data, TextureID_Sprites);
+        Image sprites = LoadImageEx("../assets/sprites.png", 3);
+        OpenGL3_CreateTexture(texture, &memory_arena, &sprites, 8, 8);
         
-        Texture *glyphs_texture = GetTexture(&app.io, TextureID_Glyphs);
-        LoadTexture(sprites_texture, "../assets/glyphs.png", 4, 8, 8);
+        texture = OpenGL3_GetTexture(&opengl3_data, TextureID_Glyphs);
+        Image glyphs = LoadImageEx("../assets/glyphs.png", 4);
+        OpenGL3_CreateTexture(texture, &memory_arena, &glyphs, 8, 8);
     }
     
-    SDL2_Init(&app.io, &memory_arena, window);
-    OpenGL3_Init(&app.io, &memory_arena);
+    SDL2_Init(&sdl2_data, window);
+    OpenGL3_Init(&opengl3_data);
     
     unsigned long int last_counter = SDL_GetPerformanceCounter();
     app.is_running = true;
     while(app.is_running)
     {
-        SDL2_NewFrame(&app.io);
-        OpenGL3_NewFrame(&app.io);
+        SDL2_NewFrame(&sdl2_data, &app.io);
+        OpenGL3_NewFrame(&opengl3_data);
         
         SDL_Event event;
         while(SDL_PollEvent(&event))
