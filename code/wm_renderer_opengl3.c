@@ -70,7 +70,7 @@ bool CheckProgram(GLuint handle, char *description)
 
 OpenGL3_Texture *OpenGL3_GetTexture(OpenGL3_Data *opengl3_data, int texture_id)
 {
-    ASSERT(texture_id > 0 && texture_id < (int)ARRAY_SIZE(opengl3_data->textures));
+    ASSERT(texture_id >= 0 && texture_id < (int)ARRAY_SIZE(opengl3_data->textures));
     OpenGL3_Texture *result = opengl3_data->textures + texture_id;
     return result;
 }

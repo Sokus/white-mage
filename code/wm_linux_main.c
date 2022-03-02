@@ -138,6 +138,21 @@ int main(void)
     SDL2_Init(&sdl2_data, window);
     OpenGL3_Init(&opengl3_data);
     
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
     unsigned long int last_counter = SDL_GetPerformanceCounter();
     app.is_running = true;
     while(app.is_running)
@@ -151,6 +166,20 @@ int main(void)
         
         glClearColor(46.0f/256.0f, 34.0f/256.0f, 47.0f/256.0f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
         
         SDL_GL_SwapWindow(window);
         
