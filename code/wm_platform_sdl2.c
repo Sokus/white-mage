@@ -1,15 +1,17 @@
-typedef struct SDL2_Data
+float SDL2_GetSecondsElapsed(unsigned long int start_counter, unsigned long int end_counter)
 {
-    SDL_Window *window;
-} SDL2_Data;
+    unsigned long int counter_elapsed = end_counter - start_counter;
+    float result = (float)counter_elapsed / (float)SDL_GetPerformanceFrequency();
+    return result;
+}
 
-void SDL2_ProcessEvent(App *app, SDL_Event *event)
+void SDL2_ProcessEvent(SDL_Event *event, bool *is_running)
 {
     switch(event->type)
     {
         case SDL_QUIT:
         {
-            app->is_running = false;
+            *is_running = false;
         } break;
 #if 0
         case SDL_KEYDOWN:
@@ -63,28 +65,4 @@ case keycode: { app->input.keys_down[(input_key)] = is_down; } break
         } break;
 #endif
     }
-}
-
-bool SDL2_Init(SDL2_Data *data, SDL_Window *window)
-{
-    data->window = window;
-    
-    return true;
-}
-
-void SDL2_NewFrame(SDL2_Data *data, IO *io)
-{
-    int screen_width, screen_height;
-    SDL_GetWindowSize(data->window, &screen_width, &screen_height);
-    io->screen_width = screen_width;
-    io->screen_height = screen_height;
-    
-    // Update Input
-}
-
-float SDL2_GetSecondsElapsed(unsigned long int start_counter, unsigned long int end_counter)
-{
-    unsigned long int counter_elapsed = end_counter - start_counter;
-    float result = (float)counter_elapsed / (float)SDL_GetPerformanceFrequency();
-    return result;
 }
