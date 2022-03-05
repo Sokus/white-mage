@@ -5,7 +5,8 @@ float SDL2_GetSecondsElapsed(unsigned long int start_counter, unsigned long int 
     return result;
 }
 
-void SDL2_ProcessEvent(SDL_Event *event, bool *is_running)
+void SDL2_ProcessEvent(SDL_Event *event, SDL_Window *window,
+                       Input *input, bool *is_running, bool *fullscreen, bool *mouse_relative)
 {
     switch(event->type)
     {
@@ -13,7 +14,15 @@ void SDL2_ProcessEvent(SDL_Event *event, bool *is_running)
         {
             *is_running = false;
         } break;
-#if 0
+        
+        case SDL_MOUSEMOTION:
+        {
+            input->mouse_x = event->motion.x;
+            input->mouse_y = event->motion.y;
+            input->mouse_rel_x += event->motion.xrel;
+            input->mouse_rel_y += event->motion.yrel;
+        } break;
+        
         case SDL_KEYDOWN:
         case SDL_KEYUP:
         {
@@ -25,10 +34,12 @@ void SDL2_ProcessEvent(SDL_Event *event, bool *is_running)
             // bool ctrl_is_down = (mod & KMOD_CTRL);
             bool alt_is_down = (mod & KMOD_ALT);
             
+            *mouse_relative = !alt_is_down;
+            
             if(event->key.repeat == 0)
             {
 #define _SDL_PROCESS_KEYBOARD_MESSAGE(keycode, input_key)\
-case keycode: { app->input.keys_down[(input_key)] = is_down; } break
+case keycode: { input->keys_down[(input_key)] = is_down; } break
                 switch(kc)
                 {
                     _SDL_PROCESS_KEYBOARD_MESSAGE(SDLK_w,      InputKey_MoveUp);
@@ -50,19 +61,18 @@ case keycode: { app->input.keys_down[(input_key)] = is_down; } break
                 if((alt_is_down && kc == SDLK_RETURN)
                    || (kc == SDLK_F11))
                 {
-                    app->fullscreen = !app->fullscreen;
-                    SDL_WindowFlags flags = (app->fullscreen
+                    *fullscreen = !(*fullscreen);
+                    SDL_WindowFlags flags = (*fullscreen
                                              ? SDL_WINDOW_FULLSCREEN_DESKTOP
                                              : 0);
-                    SDL_SetWindowFullscreen(app->sdl_state.window, flags);
+                    SDL_SetWindowFullscreen(window, flags);
                 }
                 
                 if(alt_is_down && kc == SDLK_F4)
                 {
-                    app->is_running = false;
+                    *is_running = false;
                 }
             }
         } break;
-#endif
     }
 }

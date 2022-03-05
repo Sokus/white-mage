@@ -31,7 +31,7 @@
 #include "wm_platform_sdl2.c"
 #include "wm_renderer_opengl3.c"
 
-ReadFileResult Linux_ReadEntireFile(char *path)
+ReadFileResult Linux_ReadEntireFile(char *path, bool end_with_zero)
 {
     ReadFileResult result = {0};
     int fd = open(path, O_RDONLY);
@@ -41,8 +41,12 @@ ReadFileResult Linux_ReadEntireFile(char *path)
         struct stat file_stat;
         fstat(fd, &file_stat);
         uint32_t size = (uint32_t)file_stat.st_size; // NOTE(sokus): This limits our file size
+        if(end_with_zero)
+            size++;
         void *data = valloc(size);
         read(fd, data, size);
+        if(end_with_zero)
+            *((char *)data + size - 1) = 0;
         
         result.data = data;
         result.size = size;
@@ -58,8 +62,9 @@ ReadFileResult Linux_ReadEntireFile(char *path)
 int main(void)
 {
     bool is_running = false;
-    //bool fullscreen = false;
-    float target_fps = 30.0f;
+    bool fullscreen = false;
+    bool mouse_relative = true;
+    float target_fps = 60.0f;
     float dt = 1.0f / target_fps;
     
     int screen_width = 0;
@@ -99,84 +104,18 @@ int main(void)
     glDisable(GL_STENCIL_TEST);
     glDisable(GL_SCISSOR_TEST);
     
-    char *standard_vs =
-        "#version 420 core\n"
-        "layout (location = 0) in vec3 aPos;\n"
-        "layout (location = 1) in vec3 aNormal;\n"
-        "\n"
-        "out vec3 FragPos;\n"
-        "out vec3 Normal;\n"
-        "\n"
-        "uniform mat4 model;\n"
-        "uniform mat4 view;\n"
-        "uniform mat4 projection;\n"
-        "\n"
-        "void main()\n"
-        "{\n"
-        "    FragPos = vec3(model * vec4(aPos, 1.0));\n"
-        "    Normal = mat3(transpose(inverse(model))) * aNormal;\n"
-        "    gl_Position = projection * view * vec4(FragPos, 1.0);\n"
-        "}\n";
-    
-    char *standard_fs =
-        "#version 420 core\n"
-        "out vec4 FragColor;\n"
-        "\n"
-        "in vec3 Normal;  \n"
-        "in vec3 FragPos;  \n"
-        "\n"
-        "uniform vec3 lightPos; \n"
-        "uniform vec3 viewPos; \n"
-        "uniform vec3 lightColor;\n"
-        "uniform vec3 objectColor;\n"
-        "\n"
-        "void main()\n"
-        "{\n"
-        "    // ambient\n"
-        "    float ambientStrength = 0.1;\n"
-        "    vec3 ambient = ambientStrength * lightColor;\n"
-        "\n"
-        "    // diffuse \n"
-        "    vec3 norm = normalize(Normal);\n"
-        "    vec3 lightDir = normalize(lightPos - FragPos);\n"
-        "    float diff = max(dot(norm, lightDir), 0.0);\n"
-        "    vec3 diffuse = diff * lightColor;\n"
-        "\n"
-        "    // specular\n"
-        "    float specularStrength = 0.5;\n"
-        "    vec3 viewDir = normalize(viewPos - FragPos);\n"
-        "    vec3 reflectDir = reflect(-lightDir, norm);  \n"
-        "    float spec = pow(max(dot(viewDir, reflectDir), 0.0), 32);\n"
-        "    vec3 specular = specularStrength * spec * lightColor;  \n"
-        "\n"
-        "    vec3 result = (ambient + diffuse + specular) * objectColor;\n"
-        "    FragColor = vec4(result, 1.0);\n"
-        "} \n";
-    
-    char *light_vs =
-        "#version 420 core\n"
-        "layout (location = 0) in vec3 aPos;\n"
-        "\n"
-        "uniform mat4 model;\n"
-        "uniform mat4 view;\n"
-        "uniform mat4 projection;\n"
-        "\n"
-        "void main()\n"
-        "{\n"
-        "    gl_Position = projection * view * model * vec4(aPos, 1.0);\n"
-        "}\n";
-    
-    char *light_fs =
-        "#version 420 core\n"
-        "out vec4 FragColor;\n"
-        "\n"
-        "void main()\n"
-        "{\n"
-        "    FragColor = vec4(1.0); // set alle 4 vector values to 1.0\n"
-        "}\n";
-    
-    GLuint standard_program = CreateProgram(standard_vs, standard_fs, "standard shader");
-    GLuint light_program = CreateProgram(light_vs, light_fs, "light shader");
+    GLuint standard_program, light_program;
+    {
+        ReadFileResult standard_vs = Linux_ReadEntireFile("../code/shaders/standard.vs", true);
+        ReadFileResult standard_fs = Linux_ReadEntireFile("../code/shaders/standard.fs", true);
+        standard_program = CreateProgram((char *)standard_vs.data, (char *)standard_fs.data, "standard shader");
+        free(standard_vs.data); free(standard_fs.data);
+        
+        ReadFileResult light_vs = Linux_ReadEntireFile("../code/shaders/light.vs", true);
+        ReadFileResult light_fs = Linux_ReadEntireFile("../code/shaders/light.fs", true);
+        light_program = CreateProgram((char *)light_vs.data, (char *)light_fs.data, "light shader");
+        free(light_vs.data); free(light_fs.data);
+    }
     
     float vertices[] = {
         -0.5f, -0.5f, -0.5f,  0.0f,  0.0f, -1.0f,
@@ -246,7 +185,11 @@ int main(void)
     glEnableVertexAttribArray(0);
     
     
+    Input input = {0};
+    InitializeInput(&input);
     
+    Camera camera = {0};
+    InitializeCamera(&camera, 1.5f, 1.1f, 5.0f, -90.0f, 0.0f, 0.2f, 1.0f);
     
     MemoryArena memory_arena;
     unsigned char memory_buffer[4096];
@@ -259,25 +202,40 @@ int main(void)
         SDL_GetWindowSize(window, &screen_width, &screen_height);
         glViewport(0, 0, screen_width, screen_height);
         
+        input.mouse_rel_x = 0;
+        input.mouse_rel_y = 0;
         SDL_Event event;
         while(SDL_PollEvent(&event))
-            SDL2_ProcessEvent(&event, &is_running);
+            SDL2_ProcessEvent(&event, window, &input, &is_running, &fullscreen, &mouse_relative);
+        SDL_SetRelativeMouseMode(mouse_relative);
         
-        glClearColor(46.0f/256.0f, 34.0f/256.0f, 47.0f/256.0f, 1.0f);
+        UpdateInput(&input, dt);
+        
+        if(mouse_relative)
+            ProcessMouse(&camera, (float)input.mouse_rel_x, (float)input.mouse_rel_y);
+        
+        vec3 light_pos = Vec3(1.5f, 2.0f, 1.0f);
+        int move_x = (int)IsDown(&input, InputKey_MoveRight) - (int)IsDown(&input, InputKey_MoveLeft);
+        int move_z = (int)IsDown(&input, InputKey_MoveUp) - (int)IsDown(&input, InputKey_MoveDown);
+        
+        float move_speed = 2.0f;
+        float move_amount_x = (float)move_x * move_speed;
+        float move_amount_z = (float)move_z * move_speed;
+        
+        MoveCameraRelative(&camera, move_amount_z, move_amount_x, dt);
+        
+        //glClearColor(46.0f/256.0f, 34.0f/256.0f, 47.0f/256.0f, 1.0f);
+        glClearColor(0.2f, 0.3f, 0.4f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        
-        vec3 light_pos = Vec3(5.0f, 0.0f, 3.0f);
-        vec3 view_pos = Vec3(1.5f, 1.1f, 4.0f);
         
         glUseProgram(standard_program);
         SetVec3Uniform(standard_program, "objectColor", 1.0f, 0.5f, 0.31f);
         SetVec3Uniform(standard_program, "lightColor", 1.0f, 1.0f, 1.0f);
         SetVec3Uniform(standard_program, "lightPos", light_pos.x, light_pos.y, light_pos.z);
-        SetVec3Uniform(standard_program, "viewPos", view_pos.x, view_pos.y, view_pos.z);
         
         // view/projection transformations
-        mat4 projection = Perspective(60.0f, (float)screen_width / (float)screen_height, 0.1f, 100.0f);
-        mat4 view = Translate(Mat4d(1.0f), -view_pos.x, -view_pos.y, -view_pos.z);
+        mat4 view = GetCameraViewMatrix(&camera);
+        mat4 projection = Perspective(40.0f, (float)screen_width / (float)screen_height, 0.1f, 100.0f);
         SetMat4Uniform(standard_program, "projection", &projection);
         SetMat4Uniform(standard_program, "view", &view);
         
@@ -295,8 +253,8 @@ int main(void)
         SetMat4Uniform(light_program, "projection", &projection);
         SetMat4Uniform(light_program, "view", &view);
         model = Mat4d(1.0f);
-        model = Translate(model, light_pos.x, light_pos.y, light_pos.z);
         model = Scale(model, 0.2f, 0.2f, 0.2f);
+        model = Translate(model, light_pos.x, light_pos.y, light_pos.z);
         SetMat4Uniform(light_program, "model", &model);
         
         glBindVertexArray(light_vao);

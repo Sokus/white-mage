@@ -39,53 +39,17 @@ char *InputKeyName(InputKey input_key)
 
 typedef struct Input
 {
+    int mouse_x_prev;
+    int mouse_y_prev;
+    int mouse_x;
+    int mouse_y;
+    
+    int mouse_rel_x;
+    int mouse_rel_y;
+    
     bool keys_down[InputKey_Count];
     float keys_down_duration[InputKey_Count];
     float keys_down_duration_previous[InputKey_Count];
 } Input;
-
-typedef enum TextureID
-{
-    TextureID_Sprites,
-    TextureID_Glyphs,
-    
-    TextureID_Count
-} TextureID;
-
-typedef enum SpriteID
-{
-    SpriteID_PlayerRed    = 0,
-    SpriteID_PlayerGreen  = 1,
-    SpriteID_PlayerBlue   = 2,
-    SpriteID_Dwarf_0      = 3,
-    SpriteID_Dwarf_1      = 6,
-    SpriteID_Dwarf_2      = 9,
-    SpriteID_Skeleton_0   = 12,
-    SpriteID_Skeleton_1   = 15,
-    SpriteID_Wolf         = 18,
-    
-    SpriteID_Bricks       = 6*16,
-    SpriteID_Bush         = 6*16 + 1*3,
-    SpriteID_Boulder      = 6*16 + 2*3,
-    
-    SpriteID_Grass_0      = 8*16,
-    SpriteID_Grass_1      = 8*16 + 1*3,
-    SpriteID_Grass_2      = 8*16 + 2*3,
-    SpriteID_Water_0      = 8*16 + 3*3,
-    SpriteID_Water_1      = 8*16 + 4*3,
-    SpriteID_Water_2      = 8*16 + 5*3,
-    
-    SpriteID_Door_0       = 12*16,
-    SpriteID_Door_1       = 12*16 + 1*3,
-    SpriteID_Chest        = 12*16 + 2*3,
-    SpriteID_Table_0      = 12*16 + 3*3,
-    SpriteID_Table_1      = 12*16 + 4*3,
-    SpriteID_Table_2      = 12*16 + 5*3,
-    SpriteID_Chair        = 13*16 + 0*3 + 2,
-    SpriteID_Barrel       = 13*16 + 1*3 + 2,
-    SpriteID_Bookshelf_0  = 13*16 + 2*3 + 2,
-    SpriteID_BookShelf_1  = 13*16 + 3*3 + 2,
-    SpriteID_Grave        = 13*16 + 4*3 + 2
-} SpriteID;
 
 #endif //WM_PLATFORM_H
